@@ -1,0 +1,25 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/fitsphere
+    username: fitsphere
+    password: fitsphere
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+  data:
+    redis:
+      host: localhost
+      port: 6380
+
+app:
+  jwt:
+    secret: replace-this-with-very-long-secret-key-for-dev
+    expiration-seconds: 7200
+  ai:
+    base-url: http://localhost:8000

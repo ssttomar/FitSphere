@@ -1,0 +1,58 @@
+services:
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./web:/app
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://backend:8080
+      - NEXT_PUBLIC_AI_BASE_URL=http://ai-service:8000
+    depends_on:
+      - backend
+      - ai-service
+
+  backend:
+    build:
+      context: ./backend-spring
+    ports:
+      - "8081:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/fitsphere
+      - SPRING_DATASOURCE_USERNAME=fitsphere
+      - SPRING_DATASOURCE_PASSWORD=fitsphere
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
+      - APP_JWT_SECRET=replace-this-with-a-long-secret-key-recommended-64-chars
+      - APP_JWT_EXPIRATION_SECONDS=7200
+      - APP_AI_BASE_URL=http://ai-service:8000
+    depends_on:
+      - postgres
+      - redis
+
+  ai-service:
+    build:
+      context: ./ai-service
+    ports:
+      - "8001:8000"
+
+  postgres:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=fitsphere
+      - POSTGRES_USER=fitsphere
+      - POSTGRES_PASSWORD=fitsphere
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+
+volumes:
+  pg_data:

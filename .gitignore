@@ -1,0 +1,12 @@
+node_modules/
+web/node_modules/
+.next/
+web/.next/
+web/out/
+backend-spring/target/
+ai-service/.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+*.log
