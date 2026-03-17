@@ -18,9 +18,9 @@ function AthleteFigure({ variant, x }: { variant: AthleteVariant; x: number }) {
   });
 
   const accent = useMemo(() => {
-    if (variant === "runner") return "#00D4FF";
+    if (variant === "runner") return "#ff8f61";
     if (variant === "powerlifter") return "#FF6A3D";
-    return "#A8FF60";
+    return "#ff4d00";
   }, [variant]);
 
   const armOffset = variant === "calisthenics" ? 0.66 : 0.5;
@@ -64,7 +64,7 @@ export function AthleteShowcase3D() {
           <Canvas shadows camera={{ position: [0, 1.4, 5], fov: 46 }}>
             <ambientLight intensity={0.45} />
             <directionalLight position={[4, 6, 3]} intensity={1.2} castShadow />
-            <spotLight position={[-4, 5, 2]} intensity={1.1} color="#7bf2ff" />
+            <spotLight position={[-4, 5, 2]} intensity={1.1} color="#ff4d00" />
             <Float speed={1.1} rotationIntensity={0.2} floatIntensity={0.2}>
               <AthleteFigure variant="runner" x={-1.6} />
               <AthleteFigure variant="powerlifter" x={0} />
@@ -81,7 +81,7 @@ export function AthleteShowcase3D() {
       </div>
 
       <div className="flex flex-col justify-center gap-5 rounded-3xl border border-white/10 bg-white/5 p-7 backdrop-blur-xl">
-        <h2 className="font-display text-4xl uppercase leading-none text-white md:text-5xl">
+        <h2 className="section-title text-4xl leading-none text-white md:text-5xl">
           Interactive Athlete Models
         </h2>
         <p className="text-zinc-300">

@@ -31,7 +31,7 @@ export function DashboardPreview() {
   return (
     <section className="mx-auto mt-20 w-full max-w-[1600px] px-4 md:px-10">
       <div className="mb-6 flex items-end justify-between gap-4">
-        <h2 className="font-display text-3xl uppercase tracking-wider text-white sm:text-4xl">Performance Dashboard</h2>
+        <h2 className="section-title text-3xl text-white sm:text-4xl">Performance Dashboard</h2>
         <p className="max-w-md text-sm text-zinc-400 sm:text-base">Animated analytics for workload, weekly output, personal records, and goal velocity.</p>
       </div>
 
@@ -42,7 +42,7 @@ export function DashboardPreview() {
               <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Workout Progress</p>
               <h3 className="mt-2 text-2xl font-semibold text-white">Weekly Training Load</h3>
             </div>
-            <BarChart3 className="h-5 w-5 text-cyan-300" />
+            <BarChart3 className="h-5 w-5 text-[#ff6a2d]" />
           </header>
           <div className="h-[270px]">
             {mounted ? (
@@ -50,15 +50,15 @@ export function DashboardPreview() {
                 <AreaChart data={weeklyProgress}>
                   <defs>
                     <linearGradient id="fitLoad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#52e5ff" stopOpacity={0.85} />
-                      <stop offset="100%" stopColor="#52e5ff" stopOpacity={0} />
+                      <stop offset="0%" stopColor="#ff4d00" stopOpacity={0.85} />
+                      <stop offset="100%" stopColor="#ff4d00" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid stroke="rgba(255,255,255,0.08)" strokeDasharray="4 4" />
                   <XAxis dataKey="day" stroke="rgba(255,255,255,0.4)" />
                   <YAxis stroke="rgba(255,255,255,0.4)" />
                   <Tooltip contentStyle={{ background: "#111318", border: "1px solid rgba(255,255,255,.14)", borderRadius: 12 }} />
-                  <Area type="monotone" dataKey="load" stroke="#52e5ff" strokeWidth={2.6} fill="url(#fitLoad)" />
+                  <Area type="monotone" dataKey="load" stroke="#ff4d00" strokeWidth={2.6} fill="url(#fitLoad)" />
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
@@ -78,7 +78,7 @@ export function DashboardPreview() {
                   <span>{value}%</span>
                 </div>
                 <div className="h-2 rounded-full bg-white/10">
-                  <div className="h-2 rounded-full bg-gradient-to-r from-cyan-300 to-orange-400" style={{ width: `${value}%` }} />
+                  <div className="h-2 rounded-full bg-gradient-to-r from-[#ff4d00] to-[#ff9169]" style={{ width: `${value}%` }} />
                 </div>
               </div>
             ))}
@@ -88,7 +88,7 @@ export function DashboardPreview() {
         <article className="glass-card">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-xl font-semibold text-white">Calories Burned</h3>
-            <Flame className="h-5 w-5 text-orange-300" />
+            <Flame className="h-5 w-5 text-[#ff6a2d]" />
           </div>
           <div className="h-[220px]">
             {mounted ? (
@@ -98,7 +98,7 @@ export function DashboardPreview() {
                   <XAxis dataKey="day" stroke="rgba(255,255,255,0.4)" />
                   <YAxis stroke="rgba(255,255,255,0.4)" />
                   <Tooltip contentStyle={{ background: "#111318", border: "1px solid rgba(255,255,255,.14)", borderRadius: 12 }} />
-                  <Bar dataKey="burn" fill="#ff8a3d" radius={[8, 8, 0, 0]} />
+                  <Bar dataKey="burn" fill="#ff4d00" radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (

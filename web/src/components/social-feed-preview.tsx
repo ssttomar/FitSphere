@@ -5,6 +5,12 @@ import { motion } from "framer-motion";
 
 const posts = [
   {
+    user: "@sumit.singh",
+    title: "Completed Leg Day",
+    content: "Squat 120kg x 5 | Deadlift 160kg x 3 | Total volume 9200kg",
+    category: "Strength",
+  },
+  {
     user: "@mara.moves",
     title: "Completed Leg Day",
     content: "Squat 120kg x 5 | Deadlift 160kg x 3 | Total volume 9200kg",
@@ -28,7 +34,7 @@ export function SocialFeedPreview() {
   return (
     <section className="mx-auto mt-20 mb-24 w-full max-w-[1600px] px-4 md:px-10">
       <div className="mb-6 flex items-end justify-between gap-4">
-        <h2 className="font-display text-3xl uppercase tracking-wider text-white sm:text-4xl">Social Training Feed</h2>
+        <h2 className="section-title text-3xl text-white sm:text-4xl">Social Training Feed</h2>
         <p className="max-w-md text-sm text-zinc-400 sm:text-base">Strava-style momentum with creator-grade storytelling and performance snapshots.</p>
       </div>
 

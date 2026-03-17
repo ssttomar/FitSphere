@@ -1,14 +1,20 @@
 import type { Metadata } from "next";
-import { Barlow_Condensed, Manrope } from "next/font/google";
+import { Inter, Montserrat, Playfair_Display } from "next/font/google";
 import "./globals.css";
 
-const displayFont = Barlow_Condensed({
+const displayFont = Montserrat({
   variable: "--font-display",
-  weight: ["600", "700", "800"],
+  weight: ["600", "700", "800", "900"],
   subsets: ["latin"],
 });
 
-const bodyFont = Manrope({
+const serifFont = Playfair_Display({
+  variable: "--font-serif",
+  weight: ["700", "800", "900"],
+  subsets: ["latin"],
+});
+
+const bodyFont = Inter({
   variable: "--font-body",
   subsets: ["latin"],
 });
@@ -25,7 +31,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${displayFont.variable} ${bodyFont.variable} antialiased`}>
+      <body className={`${displayFont.variable} ${serifFont.variable} ${bodyFont.variable} antialiased`}>
         {children}
       </body>
     </html>

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiFetch, AuthResponse } from "@/lib/api";
@@ -18,9 +18,9 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const title = useMemo(() => (mode === "register" ? "Create your FitSphere account" : "Welcome back"), [mode]);
+  const title = mode === "register" ? "Create your FitSphere account" : "Welcome back";
 
-  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (event: { preventDefault(): void; currentTarget: HTMLFormElement }) => {
     event.preventDefault();
     setError(null);
     setLoading(true);
@@ -62,22 +62,6 @@ export default function AuthPage() {
         <Link href="/" className="text-xs uppercase tracking-[0.2em] text-zinc-400">Back to home</Link>
         <h1 className="mt-4 font-display text-4xl uppercase text-white">{title}</h1>
 
-        <div className="mt-6 grid grid-cols-2 rounded-full border border-white/10 bg-black/25 p-1 text-sm">
-          <button
-            className={`rounded-full px-4 py-2 ${mode === "login" ? "bg-white text-black" : "text-zinc-300"}`}
-            onClick={() => setMode("login")}
-            type="button"
-          >
-            Login
-          </button>
-          <button
-            className={`rounded-full px-4 py-2 ${mode === "register" ? "bg-white text-black" : "text-zinc-300"}`}
-            onClick={() => setMode("register")}
-            type="button"
-          >
-            Register
-          </button>
-        </div>
 
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           {mode === "register" && (
@@ -111,9 +95,35 @@ export default function AuthPage() {
             disabled={loading}
             className="w-full rounded-full bg-white px-5 py-3 text-sm font-semibold uppercase tracking-[0.15em] text-black disabled:opacity-50"
           >
-            {loading ? "Please wait..." : mode === "register" ? "Register" : "Login"}
+            {loading ? "Please wait..." : mode === "register" ? "Create Account" : "Login"}
           </button>
         </form>
+
+        {mode === "login" && (
+          <div className="mt-5 text-center">
+            <p className="text-sm text-zinc-400">New to FitSphere?</p>
+            <button
+              type="button"
+              onClick={() => setMode("register")}
+              className="mt-2 w-full rounded-full border border-white/15 bg-transparent px-5 py-3 text-sm font-semibold uppercase tracking-[0.15em] text-white transition hover:border-white/40 hover:bg-white/5"
+            >
+              Create an Account
+            </button>
+          </div>
+        )}
+
+        {mode === "register" && (
+          <p className="mt-5 text-center text-sm text-zinc-400">
+            Already have an account?{" "}
+            <button
+              type="button"
+              onClick={() => setMode("login")}
+              className="text-white underline underline-offset-2 hover:text-zinc-200"
+            >
+              Login
+            </button>
+          </p>
+        )}
       </div>
     </main>
   );
