@@ -2,43 +2,87 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
+import { Logo } from "@/components/logo";
 import { API_BASE_URL } from "@/lib/api";
+
+const STEPS = [
+  { id: 1, label: "Body Stats" },
+  { id: 2, label: "Your Goals" },
+  { id: 3, label: "Training Style" },
+];
+
+const LEFT_CONTENT = [
+  {
+    heading: <>Build Your<br />Athlete<br />Profile</>,
+    sub: "Tell us about your body so we can calibrate your training zones and nutrition targets.",
+    tag: "Step 1 of 3 — Body Stats",
+  },
+  {
+    heading: <>Define What<br />You're<br />Training For</>,
+    sub: "Whether it's shredding fat, building mass or running faster — we align every session to your goal.",
+    tag: "Step 2 of 3 — Goals",
+  },
+  {
+    heading: <>Design Your<br />Perfect<br />Schedule</>,
+    sub: "Your AI coach crafts a weekly plan tailored to how many days you can commit and how long you train.",
+    tag: "Step 3 of 3 — Training Style",
+  },
+];
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [displayName, setDisplayName] = useState("Athlete");
+
+  // form state
+  const [form, setForm] = useState({
+    heightCm: "",
+    weightKg: "",
+    fitnessGoal: "",
+    experienceLevel: "",
+    preferredCategory: "",
+    trainingDaysPerWeek: "",
+    sessionDurationMinutes: "",
+    notes: "",
+  });
 
   useEffect(() => {
     const token = localStorage.getItem("fitsphere_token");
-    if (!token) {
-      router.replace("/auth?mode=login");
-    }
+    if (!token) router.replace("/auth?mode=login");
+    const name = localStorage.getItem("fitsphere_display_name");
+    if (name) setDisplayName(name.split(" ")[0]);
   }, [router]);
+
+  const set = (key: keyof typeof form, value: string) =>
+    setForm((prev) => ({ ...prev, [key]: value }));
+
+  const nextStep = () => {
+    setError(null);
+    setStep((s) => Math.min(s + 1, STEPS.length - 1));
+  };
+  const prevStep = () => setStep((s) => Math.max(s - 1, 0));
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (step < STEPS.length - 1) { nextStep(); return; }
+
     setError(null);
     setLoading(true);
-
     const token = localStorage.getItem("fitsphere_token");
-    if (!token) {
-      setError("Please login first");
-      setLoading(false);
-      router.replace("/auth?mode=login");
-      return;
-    }
+    if (!token) { router.replace("/auth?mode=login"); return; }
 
-    const formData = new FormData(event.currentTarget);
     const payload = {
-      heightCm: Number(formData.get("heightCm")),
-      weightKg: Number(formData.get("weightKg")),
-      fitnessGoal: String(formData.get("fitnessGoal")),
-      experienceLevel: String(formData.get("experienceLevel")),
-      preferredCategory: String(formData.get("preferredCategory")),
-      trainingDaysPerWeek: Number(formData.get("trainingDaysPerWeek")),
-      sessionDurationMinutes: Number(formData.get("sessionDurationMinutes")),
-      notes: String(formData.get("notes") || ""),
+      heightCm: Number(form.heightCm),
+      weightKg: Number(form.weightKg),
+      fitnessGoal: form.fitnessGoal,
+      experienceLevel: form.experienceLevel,
+      preferredCategory: form.preferredCategory,
+      trainingDaysPerWeek: Number(form.trainingDaysPerWeek),
+      sessionDurationMinutes: Number(form.sessionDurationMinutes),
+      notes: form.notes,
     };
 
     try {
@@ -50,62 +94,327 @@ export default function OnboardingPage() {
         },
         body: JSON.stringify(payload),
       });
-
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-
+      if (!response.ok) throw new Error(await response.text());
       router.push("/dashboard");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save onboarding data");
+      setError(err instanceof Error ? err.message : "Failed to save profile");
     } finally {
       setLoading(false);
     }
   };
 
+  const left = LEFT_CONTENT[step];
+
+  const inputCls =
+    "w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-zinc-500 outline-none focus:border-orange-500/60 transition";
+  const labelCls = "block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wider";
+
   return (
-    <main className="min-h-screen bg-[#05070d] px-6 py-14">
-      <div className="mx-auto w-full max-w-2xl rounded-3xl border border-white/10 bg-white/5 p-7 backdrop-blur-xl">
-        <h1 className="font-display text-4xl uppercase text-white">Athlete Onboarding</h1>
-        <p className="mt-2 text-sm text-zinc-300">Complete your profile so the AI coach can generate your weekly plan.</p>
+    <main className="min-h-screen flex">
 
-        <form onSubmit={onSubmit} className="mt-8 grid gap-4 sm:grid-cols-2">
-          <input name="heightCm" type="number" step="0.1" min="100" max="260" required placeholder="Height (cm)" className="rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white outline-none" />
-          <input name="weightKg" type="number" step="0.1" min="30" max="300" required placeholder="Weight (kg)" className="rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white outline-none" />
+      {/* ── Left Panel ── */}
+      <div className="relative hidden lg:flex lg:w-[45%] xl:w-1/2 flex-col justify-between overflow-hidden">
+        <Image
+          src="/images/hero-fallback-5.jpg"
+          alt="Athlete"
+          fill
+          className="object-cover object-center"
+          priority
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-black/75 via-black/45 to-black/20" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent" />
 
-          <select name="fitnessGoal" required className="rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white outline-none">
-            <option value="">Fitness Goal</option>
-            <option>Fat loss</option>
-            <option>Muscle gain</option>
-            <option>Strength</option>
-            <option>Endurance</option>
-          </select>
+        {/* Top */}
+        <div className="relative z-10 p-8">
+          <Logo size={38} />
+        </div>
 
-          <select name="experienceLevel" required className="rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white outline-none">
-            <option value="">Experience Level</option>
-            <option>Beginner</option>
-            <option>Intermediate</option>
-            <option>Advanced</option>
-          </select>
+        {/* Bottom */}
+        <div className="relative z-10 p-10 pb-14">
+          {/* Step tag */}
+          <span className="inline-flex items-center rounded-full border border-orange-500/40 bg-orange-500/10 px-3 py-1 text-xs uppercase tracking-widest text-orange-400 mb-6">
+            {left.tag}
+          </span>
 
-          <select name="preferredCategory" required className="rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white outline-none">
-            <option value="">Preferred Category</option>
-            <option>Gym</option>
-            <option>Running</option>
-            <option>Calisthenics</option>
-          </select>
+          <h2 className="text-5xl xl:text-6xl font-black text-white leading-tight mb-4">
+            {left.heading}
+          </h2>
+          <p className="text-white/65 text-sm leading-relaxed max-w-xs mb-10">
+            {left.sub}
+          </p>
 
-          <input name="trainingDaysPerWeek" type="number" min="1" max="7" required placeholder="Training days per week" className="rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white outline-none" />
-          <input name="sessionDurationMinutes" type="number" min="20" max="240" required placeholder="Session duration (minutes)" className="rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white outline-none sm:col-span-2" />
+          {/* Step indicators */}
+          <div className="flex items-center gap-3">
+            {STEPS.map((s, i) => (
+              <div key={s.id} className="flex items-center gap-3">
+                <div className={`flex items-center gap-2 ${i <= step ? "opacity-100" : "opacity-30"}`}>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border transition-all ${
+                    i < step
+                      ? "bg-orange-500 border-orange-500 text-white"
+                      : i === step
+                      ? "bg-transparent border-orange-500 text-orange-400"
+                      : "bg-transparent border-white/30 text-white/40"
+                  }`}>
+                    {i < step ? (
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (i + 1)}
+                  </div>
+                  <span className="text-xs text-white/70">{s.label}</span>
+                </div>
+                {i < STEPS.length - 1 && (
+                  <div className={`w-8 h-px transition-all ${i < step ? "bg-orange-500" : "bg-white/20"}`} />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
 
-          <textarea name="notes" placeholder="Injuries, recovery notes, preferences" className="min-h-24 rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-white outline-none sm:col-span-2" />
+      {/* ── Right Panel ── */}
+      <div className="flex-1 flex flex-col justify-center items-center bg-[#0a0c12] px-6 py-10 lg:px-12 xl:px-16 overflow-y-auto">
 
-          {error && <p className="text-sm text-red-300 sm:col-span-2">{error}</p>}
+        {/* Mobile logo */}
+        <div className="lg:hidden mb-8 self-start">
+          <Logo size={36} />
+        </div>
 
-          <button type="submit" disabled={loading} className="rounded-full bg-white px-6 py-3 text-sm font-semibold uppercase tracking-[0.15em] text-black disabled:opacity-50 sm:col-span-2">
-            {loading ? "Saving..." : "Save and continue"}
-          </button>
-        </form>
+        <div className="w-full max-w-md">
+
+          {/* Greeting */}
+          <div className="mb-8">
+            <p className="text-orange-400 text-sm font-semibold uppercase tracking-widest mb-1">
+              Welcome, {displayName}
+            </p>
+            <h1 className="text-3xl font-black text-white" style={{ fontFamily: "var(--font-display)" }}>
+              {step === 0 && "Your Body Stats"}
+              {step === 1 && "Set Your Goal"}
+              {step === 2 && "Training Preferences"}
+            </h1>
+            <p className="text-zinc-400 text-sm mt-1.5">
+              {step === 0 && "We use this to calculate your BMI and training intensity."}
+              {step === 1 && "Choose what you want to achieve and your current level."}
+              {step === 2 && "How often and how long do you want to train?"}
+            </p>
+          </div>
+
+          {/* Progress bar */}
+          <div className="flex gap-1.5 mb-8">
+            {STEPS.map((_, i) => (
+              <div
+                key={i}
+                className={`h-1 flex-1 rounded-full transition-all duration-500 ${
+                  i <= step ? "bg-orange-500" : "bg-white/10"
+                }`}
+              />
+            ))}
+          </div>
+
+          <form onSubmit={onSubmit} className="space-y-5">
+
+            {/* Step 0 — Body Stats */}
+            {step === 0 && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelCls}>Height</label>
+                    <div className="relative">
+                      <input
+                        type="number" step="0.1" min="100" max="260" required
+                        placeholder="e.g. 175"
+                        value={form.heightCm}
+                        onChange={(e) => set("heightCm", e.target.value)}
+                        className={inputCls}
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-zinc-500">cm</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Weight</label>
+                    <div className="relative">
+                      <input
+                        type="number" step="0.1" min="30" max="300" required
+                        placeholder="e.g. 75"
+                        value={form.weightKg}
+                        onChange={(e) => set("weightKg", e.target.value)}
+                        className={inputCls}
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-zinc-500">kg</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* BMI preview */}
+                {form.heightCm && form.weightKg && (
+                  <div className="rounded-xl bg-orange-500/10 border border-orange-500/20 px-4 py-3 flex items-center justify-between">
+                    <span className="text-sm text-zinc-300">Your BMI</span>
+                    <span className="text-orange-400 font-black text-lg">
+                      {(Number(form.weightKg) / Math.pow(Number(form.heightCm) / 100, 2)).toFixed(1)}
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Step 1 — Goals */}
+            {step === 1 && (
+              <>
+                <div>
+                  <label className={labelCls}>Fitness Goal</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {["Fat loss", "Muscle gain", "Strength", "Endurance"].map((goal) => (
+                      <button
+                        key={goal} type="button"
+                        onClick={() => set("fitnessGoal", goal)}
+                        className={`rounded-xl border px-4 py-3.5 text-sm font-semibold text-left transition-all ${
+                          form.fitnessGoal === goal
+                            ? "border-orange-500 bg-orange-500/15 text-orange-400"
+                            : "border-white/10 bg-white/5 text-zinc-300 hover:border-white/25"
+                        }`}
+                      >
+                        {goal === "Fat loss" && "🔥 "}
+                        {goal === "Muscle gain" && "💪 "}
+                        {goal === "Strength" && "🏋️ "}
+                        {goal === "Endurance" && "🏃 "}
+                        {goal}
+                      </button>
+                    ))}
+                  </div>
+                  <input type="hidden" name="fitnessGoal" value={form.fitnessGoal} required />
+                </div>
+
+                <div>
+                  <label className={labelCls}>Experience Level</label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {["Beginner", "Intermediate", "Advanced"].map((level) => (
+                      <button
+                        key={level} type="button"
+                        onClick={() => set("experienceLevel", level)}
+                        className={`rounded-xl border px-3 py-3.5 text-sm font-semibold transition-all ${
+                          form.experienceLevel === level
+                            ? "border-orange-500 bg-orange-500/15 text-orange-400"
+                            : "border-white/10 bg-white/5 text-zinc-300 hover:border-white/25"
+                        }`}
+                      >
+                        {level}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className={labelCls}>Preferred Category</label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {["Gym", "Running", "Calisthenics"].map((cat) => (
+                      <button
+                        key={cat} type="button"
+                        onClick={() => set("preferredCategory", cat)}
+                        className={`rounded-xl border px-3 py-3.5 text-sm font-semibold transition-all ${
+                          form.preferredCategory === cat
+                            ? "border-orange-500 bg-orange-500/15 text-orange-400"
+                            : "border-white/10 bg-white/5 text-zinc-300 hover:border-white/25"
+                        }`}
+                      >
+                        {cat === "Gym" && "🏋️ "}
+                        {cat === "Running" && "🏃 "}
+                        {cat === "Calisthenics" && "🤸 "}
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Step 2 — Training Style */}
+            {step === 2 && (
+              <>
+                <div>
+                  <label className={labelCls}>Training Days Per Week</label>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5, 6, 7].map((d) => (
+                      <button
+                        key={d} type="button"
+                        onClick={() => set("trainingDaysPerWeek", String(d))}
+                        className={`flex-1 rounded-xl border py-3 text-sm font-bold transition-all ${
+                          form.trainingDaysPerWeek === String(d)
+                            ? "border-orange-500 bg-orange-500/15 text-orange-400"
+                            : "border-white/10 bg-white/5 text-zinc-400 hover:border-white/25"
+                        }`}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className={labelCls}>Session Duration</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {[30, 45, 60, 90].map((d) => (
+                      <button
+                        key={d} type="button"
+                        onClick={() => set("sessionDurationMinutes", String(d))}
+                        className={`rounded-xl border py-3 text-sm font-bold transition-all ${
+                          form.sessionDurationMinutes === String(d)
+                            ? "border-orange-500 bg-orange-500/15 text-orange-400"
+                            : "border-white/10 bg-white/5 text-zinc-400 hover:border-white/25"
+                        }`}
+                      >
+                        {d}<span className="text-xs font-normal">m</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className={labelCls}>Notes <span className="normal-case text-zinc-500">(optional)</span></label>
+                  <textarea
+                    value={form.notes}
+                    onChange={(e) => set("notes", e.target.value)}
+                    placeholder="Injuries, equipment limits, preferences..."
+                    rows={3}
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-zinc-500 outline-none focus:border-orange-500/60 transition resize-none"
+                  />
+                </div>
+              </>
+            )}
+
+            {error && (
+              <div className="flex items-center gap-2 rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3">
+                <svg className="w-4 h-4 text-red-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-sm text-red-300">{error}</p>
+              </div>
+            )}
+
+            {/* Navigation */}
+            <div className="flex gap-3 pt-1">
+              {step > 0 && (
+                <button
+                  type="button"
+                  onClick={prevStep}
+                  className="flex-1 rounded-xl border border-white/15 bg-transparent py-3.5 text-sm font-bold text-white hover:border-white/30 hover:bg-white/5 transition"
+                >
+                  ← Back
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 rounded-xl bg-orange-500 hover:bg-orange-400 py-3.5 text-sm font-bold uppercase tracking-widest text-white transition disabled:opacity-50"
+              >
+                {loading
+                  ? "Saving..."
+                  : step < STEPS.length - 1
+                  ? "Continue →"
+                  : "Complete Setup"}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </main>
   );

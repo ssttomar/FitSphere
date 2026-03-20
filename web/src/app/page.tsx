@@ -4,12 +4,12 @@ import { useEffect, useRef } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { HeroSection } from "@/components/hero-section";
-import { VideoCarousel } from "@/components/video-carousel";
-import { AthleteShowcase3D } from "@/components/athlete-showcase-3d";
-import { DashboardPreview } from "@/components/dashboard-preview";
 import { SocialFeedPreview } from "@/components/social-feed-preview";
 import { CommunitySection } from "@/components/community-section";
 import { AICalorieSection } from "@/components/ai-calorie-section";
+import { DashboardPreview } from "@/components/dashboard-preview";
+import { FeaturesSection } from "@/components/features-section";
+import { SiteFooter } from "@/components/site-footer";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -53,13 +53,14 @@ export default function Home() {
   return (
     <div ref={rootRef} className="relative min-h-screen overflow-hidden bg-[#000000]">
       <div data-parallax className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_16%_20%,rgba(255,77,0,0.2),transparent_34%),radial-gradient(circle_at_82%_12%,rgba(255,255,255,0.08),transparent_30%),radial-gradient(circle_at_50%_84%,rgba(255,77,0,0.1),transparent_42%)]" />
+
       <HeroSection />
-      <VideoCarousel />
-      <AthleteShowcase3D />
-      <DashboardPreview />
       <SocialFeedPreview />
       <CommunitySection />
       <AICalorieSection />
+      <DashboardPreview />
+      <FeaturesSection />
+      <SiteFooter />
     </div>
   );
 }

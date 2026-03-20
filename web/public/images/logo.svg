@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <!-- Speed lines -->
+  <line x1="10" y1="95" x2="72" y2="95" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.9"/>
+  <line x1="20" y1="108" x2="68" y2="108" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+  <line x1="30" y1="121" x2="65" y2="121" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+  <line x1="18" y1="82" x2="65" y2="82" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+
+  <!-- Running figure -->
+  <!-- Head -->
+  <circle cx="130" cy="52" r="13" fill="white"/>
+
+  <!-- Body / torso -->
+  <path d="M118 65 C112 75 108 88 112 100 C116 112 124 118 130 122"
+        stroke="white" stroke-width="9" stroke-linecap="round" fill="none"/>
+
+  <!-- Left arm (forward) -->
+  <path d="M118 72 C108 78 96 80 88 76"
+        stroke="white" stroke-width="7" stroke-linecap="round" fill="none"/>
+
+  <!-- Right arm (back) -->
+  <path d="M122 80 C132 86 142 88 150 84"
+        stroke="white" stroke-width="7" stroke-linecap="round" fill="none"/>
+
+  <!-- Left leg (forward / lifted) -->
+  <path d="M122 118 C118 130 110 140 100 148 C96 152 92 158 95 163"
+        stroke="white" stroke-width="8" stroke-linecap="round" fill="none"/>
+
+  <!-- Right leg (back / pushing) -->
+  <path d="M128 122 C134 134 142 144 152 152 C156 156 158 162 155 168"
+        stroke="white" stroke-width="8" stroke-linecap="round" fill="none"/>
+</svg>

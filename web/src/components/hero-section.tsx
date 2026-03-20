@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import gsap from "gsap";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { Logo } from "@/components/logo";
 
 // ─── Video sources ────────────────────────────────────────────────────────────
 // After running scripts/optimize-videos.sh swap paths to /videos/optimized/hero*.mp4
@@ -185,6 +186,25 @@ export function HeroSection() {
         }}
       />
 
+
+      {/* ── Navbar ──────────────────────────────────────────────────────── */}
+      <nav className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-6 py-5 md:px-12 lg:px-20">
+        <Logo size={42} />
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => router.push("/auth?mode=login")}
+            className="text-sm font-semibold text-white/80 hover:text-white transition-colors px-4 py-2"
+          >
+            Sign In
+          </button>
+          <button
+            onClick={() => router.push("/auth?mode=register")}
+            className="rounded-full bg-orange-500 hover:bg-orange-400 px-5 py-2 text-sm font-bold text-white transition-colors"
+          >
+            Get Started
+          </button>
+        </div>
+      </nav>
 
       {/* ── Hero content ────────────────────────────────────────────────── */}
       <div className="relative z-20 flex h-screen flex-col justify-end px-6 pb-16 pt-32 md:px-12 lg:px-20">

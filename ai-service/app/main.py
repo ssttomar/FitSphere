@@ -3,10 +3,18 @@ from typing import Any, Dict, List
 
 import numpy as np
 from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from PIL import Image
 
 app = FastAPI(title="FitSphere AI Service", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://10.212.52.68:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class ProgressSnapshot(BaseModel):

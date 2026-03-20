@@ -1,19 +1,4 @@
 services:
-  frontend:
-    image: node:22-alpine
-    working_dir: /app
-    command: sh -c "npm install && npm run dev"
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./web:/app
-    environment:
-      - NEXT_PUBLIC_API_BASE_URL=http://backend:8080
-      - NEXT_PUBLIC_AI_BASE_URL=http://ai-service:8000
-    depends_on:
-      - backend
-      - ai-service
-
   backend:
     build:
       context: ./backend-spring
