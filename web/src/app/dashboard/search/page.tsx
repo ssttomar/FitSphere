@@ -54,12 +54,14 @@ export default function SearchPage() {
     // Load follow state from localStorage
     try {
       const stored = JSON.parse(localStorage.getItem("fitsphere_follow_state") || "{}");
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFollowState(stored);
     } catch { /* ignore */ }
   }, []);
 
   useEffect(() => {
     if (!query.trim()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResults([]);
       return;
     }

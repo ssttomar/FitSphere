@@ -232,7 +232,10 @@ export default function TrainingTrackerPage() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setSessions(JSON.parse(raw));
+      if (raw) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setSessions(JSON.parse(raw));
+      }
     } catch {
       // ignore
     }

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
+import { KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -11,6 +11,41 @@ import { API_BASE_URL, ApiError } from "@/lib/api";
 
 type Mode = "login" | "signup";
 type SignupStep = "method" | "phone" | "phone-otp" | "details" | "email" | "email-otp";
+
+type GoogleCredentialResponse = { credential: string };
+
+type AuthResponse = {
+  userId: string;
+  token: string;
+  displayName: string;
+  isNewUser?: boolean;
+};
+
+type RegisterRequestBody = {
+  username: string;
+  displayName: string;
+  password: string;
+  phone: string;
+  email?: string;
+  emailOtp?: string;
+};
+
+declare global {
+  interface Window {
+    __gsiLoaded?: boolean;
+    google?: {
+      accounts?: {
+        id?: {
+          initialize: (config: {
+            client_id: string;
+            callback: (response: GoogleCredentialResponse) => void;
+          }) => void;
+          prompt: () => void;
+        };
+      };
+    };
+  }
+}
 
 const COUNTRY_CODES = [
   { dial: "+91", flag: "🇮🇳", name: "India" },
@@ -70,9 +105,9 @@ function saveAuth(resp: { userId: string; token: string; displayName: string }) 
 // ── OTP Input (6 boxes) ───────────────────────────────────────────────────────
 
 function OtpInput({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
-  const refs = Array.from({ length: 6 }, () => useRef<HTMLInputElement>(null));
+  const refs = useRef<Array<HTMLInputElement | null>>([]);
 
-  useEffect(() => { refs[0].current?.focus(); }, []);
+  useEffect(() => { refs.current[0]?.focus(); }, []);
 
   const handleChange = (i: number, raw: string) => {
     const digits = raw.replace(/\D/g, "");
@@ -81,17 +116,17 @@ function OtpInput({ value, onChange }: { value: string[]; onChange: (v: string[]
       const next = [...value];
       digits.split("").forEach((d, j) => { if (i + j < 6) next[i + j] = d; });
       onChange(next);
-      refs[Math.min(i + digits.length, 5)].current?.focus();
+      refs.current[Math.min(i + digits.length, 5)]?.focus();
       return;
     }
     const next = [...value];
     next[i] = digits;
     onChange(next);
-    if (digits && i < 5) refs[i + 1].current?.focus();
+    if (digits && i < 5) refs.current[i + 1]?.focus();
   };
 
   const handleKeyDown = (i: number, e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Backspace" && !value[i] && i > 0) refs[i - 1].current?.focus();
+    if (e.key === "Backspace" && !value[i] && i > 0) refs.current[i - 1]?.focus();
   };
 
   return (
@@ -99,7 +134,9 @@ function OtpInput({ value, onChange }: { value: string[]; onChange: (v: string[]
       {value.map((digit, i) => (
         <input
           key={i}
-          ref={refs[i]}
+          ref={(el) => {
+            refs.current[i] = el;
+          }}
           type="text"
           inputMode="numeric"
           maxLength={6}
@@ -174,6 +211,23 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
 
   const fullPhone = countryCode.dial + phoneLocal.replace(/\D/g, "");
 
+  const handleGoogleCredential = useCallback(async (response: GoogleCredentialResponse) => {
+    setGoogleLoading(true);
+    setError(null);
+    try {
+      const res = await apiFetch<AuthResponse>("/api/auth/google", {
+        method: "POST",
+        body: JSON.stringify({ idToken: response.credential }),
+      });
+      saveAuth(res);
+      onDone(Boolean(res.isNewUser));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Google sign-in failed");
+    } finally {
+      setGoogleLoading(false);
+    }
+  }, [onDone]);
+
   // Load Google Identity Services
   useEffect(() => {
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
@@ -183,14 +237,14 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
     script.async = true;
     script.defer = true;
     script.onload = () => {
-      (window as any).google?.accounts.id.initialize({
+      window.google?.accounts?.id?.initialize({
         client_id: clientId,
         callback: handleGoogleCredential,
       });
     };
     document.head.appendChild(script);
     return () => { document.head.removeChild(script); };
-  }, []);
+  }, [handleGoogleCredential]);
 
   // Resend countdown timer
   useEffect(() => {
@@ -213,27 +267,10 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
     return () => clearTimeout(id);
   }, [username]);
 
-  const handleGoogleCredential = async (response: any) => {
-    setGoogleLoading(true);
-    setError(null);
-    try {
-      const res = await apiFetch<any>("/api/auth/google", {
-        method: "POST",
-        body: JSON.stringify({ idToken: response.credential }),
-      });
-      saveAuth(res);
-      onDone(res.isNewUser);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Google sign-in failed");
-    } finally {
-      setGoogleLoading(false);
-    }
-  };
-
   const handleGoogleClick = () => {
-    const g = (window as any).google;
-    if (g?.accounts?.id) {
-      g.accounts.id.prompt();
+    const gsi = window.google?.accounts?.id;
+    if (gsi) {
+      gsi.prompt();
     } else {
       setError("Google sign-in is not configured. Please set NEXT_PUBLIC_GOOGLE_CLIENT_ID.");
     }
@@ -300,7 +337,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
     if (username.length < 3 || usernameStatus === "taken") { setError("Choose a valid available username"); return; }
     if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
 
-    const body: any = {
+    const body: RegisterRequestBody = {
       username,
       displayName: displayName.trim(),
       password,
@@ -313,7 +350,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
 
     setLoading(true); setError(null);
     try {
-      const res = await apiFetch<any>("/api/auth/register-phone", {
+      const res = await apiFetch<AuthResponse>("/api/auth/register-phone", {
         method: "POST",
         body: JSON.stringify(body),
       });
@@ -416,7 +453,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
         <>
           <div className="mb-8">
             <h1 className="text-2xl font-black text-white">Enter your phone number</h1>
-            <p className="text-zinc-400 text-sm mt-2">We'll send you a verification code.</p>
+            <p className="text-zinc-400 text-sm mt-2">We&apos;ll send you a verification code.</p>
           </div>
 
           <div className="space-y-4">
@@ -697,27 +734,10 @@ function LoginForm({ onDone, onSwitchToSignup }: {
   const [forgotMsg, setForgotMsg] = useState<string | null>(null);
   const [forgotLoading, setForgotLoading] = useState(false);
 
-  // Load Google Identity Services
-  useEffect(() => {
-    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    if (!clientId || (window as any).__gsiLoaded) return;
-    const script = document.createElement("script");
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true; script.defer = true;
-    script.onload = () => {
-      (window as any).__gsiLoaded = true;
-      (window as any).google?.accounts.id.initialize({
-        client_id: clientId,
-        callback: handleGoogleCredential,
-      });
-    };
-    document.head.appendChild(script);
-  }, []);
-
-  const handleGoogleCredential = async (response: any) => {
+  const handleGoogleCredential = useCallback(async (response: GoogleCredentialResponse) => {
     setGoogleLoading(true); setError(null);
     try {
-      const res = await apiFetch<any>("/api/auth/google", {
+      const res = await apiFetch<AuthResponse>("/api/auth/google", {
         method: "POST",
         body: JSON.stringify({ idToken: response.credential }),
       });
@@ -726,11 +746,28 @@ function LoginForm({ onDone, onSwitchToSignup }: {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Google sign-in failed");
     } finally { setGoogleLoading(false); }
-  };
+  }, [onDone]);
+
+  // Load Google Identity Services
+  useEffect(() => {
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientId || window.__gsiLoaded) return;
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true; script.defer = true;
+    script.onload = () => {
+      window.__gsiLoaded = true;
+      window.google?.accounts?.id?.initialize({
+        client_id: clientId,
+        callback: handleGoogleCredential,
+      });
+    };
+    document.head.appendChild(script);
+  }, [handleGoogleCredential]);
 
   const handleGoogleClick = () => {
-    const g = (window as any).google;
-    if (g?.accounts?.id) { g.accounts.id.prompt(); }
+    const gsi = window.google?.accounts?.id;
+    if (gsi) { gsi.prompt(); }
     else { setError("Google sign-in not configured."); }
   };
 
@@ -738,7 +775,7 @@ function LoginForm({ onDone, onSwitchToSignup }: {
     if (!identifier.trim() || !password) { setError("Fill in all fields"); return; }
     setLoading(true); setError(null);
     try {
-      const res = await apiFetch<any>("/api/auth/login", {
+      const res = await apiFetch<AuthResponse>("/api/auth/login", {
         method: "POST",
         body: JSON.stringify({ identifier: identifier.trim(), password }),
       });
@@ -864,7 +901,7 @@ function LoginForm({ onDone, onSwitchToSignup }: {
       </div>
 
       <p className="mt-8 text-center text-sm text-zinc-500">
-        Don't have an account?{" "}
+        Don&apos;t have an account?{" "}
         <button onClick={onSwitchToSignup} className="font-semibold text-orange-400 hover:text-orange-300 transition-colors">
           Sign up
         </button>

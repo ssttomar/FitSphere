@@ -325,6 +325,7 @@ export default function GoalsPage() {
   // Load from localStorage on mount
   useEffect(() => {
     const name = localStorage.getItem("fitsphere_display_name") || "Athlete";
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDisplayName(name);
 
     const profileData = loadProfileFromStorage();
@@ -427,6 +428,7 @@ export default function GoalsPage() {
 
   useEffect(() => {
     if (!settingsLoaded) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     recalculate();
   }, [settingsLoaded, recalculate]);
 

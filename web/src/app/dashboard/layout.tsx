@@ -257,7 +257,7 @@ function ShareProgressModal({ onClose, displayName, profileImage, initials }: {
               </div>
               <div>
                 <p className="text-sm font-semibold text-white">Mark as Personal Record</p>
-                <p className="text-xs text-zinc-500">Add your PR stats — they'll get a trophy badge</p>
+                <p className="text-xs text-zinc-500">Add your PR stats — they&apos;ll get a trophy badge</p>
               </div>
             </label>
           )}
