@@ -9,6 +9,12 @@ import java.util.UUID;
 public interface FitnessUserRepository extends JpaRepository<FitnessUser, UUID> {
 
     Optional<FitnessUser> findByEmail(String email);
+    Optional<FitnessUser> findByUsername(String username);
+    Optional<FitnessUser> findByPhoneNumber(String phoneNumber);
+    Optional<FitnessUser> findByGoogleId(String googleId);
+    Optional<FitnessUser> findByPasswordResetToken(String passwordResetToken);
 
     boolean existsByEmail(String email);
+    boolean existsByUsername(String username);
+    boolean existsByPhoneNumber(String phoneNumber);
 }

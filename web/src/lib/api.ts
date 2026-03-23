@@ -20,6 +20,18 @@ export type WeeklyPlanResponse = {
   }>;
 };
 
+export class ApiError extends Error {
+  status: number;
+  body: string;
+
+  constructor(message: string, status: number, body: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -30,9 +42,19 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   });
 
   if (!response.ok) {
-    const fallback = `Request failed with status ${response.status}`;
     const body = await response.text();
-    throw new Error(body || fallback);
+    const fallback = `Request failed with status ${response.status}`;
+    let message = body || fallback;
+
+    try {
+      const parsed = body ? (JSON.parse(body) as { message?: string; error?: string }) : null;
+      if (parsed?.message) message = parsed.message;
+      else if (parsed?.error) message = parsed.error;
+    } catch {
+      // Keep plain-text response body as-is.
+    }
+
+    throw new ApiError(message, response.status, body);
   }
 
   return response.json() as Promise<T>;

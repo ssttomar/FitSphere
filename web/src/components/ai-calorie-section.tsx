@@ -64,26 +64,68 @@ export function AICalorieSection() {
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
           <div className="absolute inset-0 bg-gradient-to-r from-transparent to-black/20" />
 
-          {/* Floating readiness card */}
-          <div className="absolute bottom-6 left-6 right-6 rounded-2xl border border-white/15 bg-black/75 p-5 backdrop-blur-md">
+          {/* Floating readiness card — with 3D orb */}
+          <div className="absolute bottom-6 left-6 right-6 rounded-2xl border border-white/15 bg-black/80 p-5 backdrop-blur-md">
             <div className="mb-3 flex items-center justify-between">
               <span className="text-xs uppercase tracking-widest text-zinc-400">
                 Today&apos;s Readiness
               </span>
-              <Zap className="h-4 w-4 text-[#ff4d00]" />
-            </div>
-            <div className="flex items-end gap-2">
-              <span className="text-4xl font-black text-white">8.6</span>
-              <span className="mb-1.5 text-sm text-zinc-400">/ 10</span>
-              <span className="mb-1 ml-auto rounded-full border border-emerald-500/30 bg-emerald-500/20 px-3 py-1 text-xs text-emerald-400">
+              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/20 px-3 py-1 text-xs text-emerald-400">
                 Peak Condition
               </span>
             </div>
-            <div className="mt-3 h-2 rounded-full bg-white/10">
-              <div
-                className="h-2 rounded-full bg-gradient-to-r from-[#ff4d00] to-emerald-400"
-                style={{ width: "86%" }}
-              />
+            <div className="flex items-center gap-5">
+              {/* 3D Readiness Orb */}
+              <div className="relative flex items-center justify-center shrink-0" style={{ width: 72, height: 72 }}>
+                {/* Outer orbit ring */}
+                <div
+                  className="absolute inset-0 rounded-full border border-dashed border-[#00c8ff]/25"
+                  style={{ animation: "ring-orbit 10s linear infinite" }}
+                />
+                {/* Inner orbit ring */}
+                <div
+                  className="absolute inset-2 rounded-full border border-[#00d4ff]/15"
+                  style={{ animation: "ring-orbit-reverse 6s linear infinite" }}
+                />
+                {/* Glow halo */}
+                <div
+                  className="absolute inset-3 rounded-full"
+                  style={{
+                    background: "radial-gradient(circle, rgba(0,180,255,0.35) 0%, transparent 70%)",
+                    filter: "blur(6px)",
+                  }}
+                />
+                {/* Orb sphere */}
+                <div
+                  className="orb-blue relative rounded-full flex items-center justify-center"
+                  style={{
+                    width: 48,
+                    height: 48,
+                    background: "radial-gradient(circle at 32% 30%, #00e5ff, #0077ff, #001840)",
+                  }}
+                >
+                  <span className="text-white font-black text-sm leading-none">8.6</span>
+                  {/* Specular highlight */}
+                  <div
+                    className="absolute rounded-full bg-white/25"
+                    style={{ width: 12, height: 7, top: 9, left: 11, filter: "blur(2px)", transform: "rotate(-20deg)" }}
+                  />
+                </div>
+              </div>
+              {/* Score + bar */}
+              <div className="flex-1">
+                <div className="flex items-baseline gap-1 mb-2">
+                  <span className="text-3xl font-black text-white">8.6</span>
+                  <span className="text-sm text-zinc-400">/ 10</span>
+                </div>
+                <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-[#ff4d00] to-emerald-400"
+                    style={{ width: "86%" }}
+                  />
+                </div>
+                <p className="text-xs text-zinc-500 mt-1.5">HRV &amp; recovery balanced</p>
+              </div>
             </div>
           </div>
 
