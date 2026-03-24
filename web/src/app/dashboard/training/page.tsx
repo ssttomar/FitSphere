@@ -589,17 +589,18 @@ export default function TrainingTrackerPage() {
                             {(selectedCategory === "Gym" || selectedCategory === "Calisthenics") && (
                               <>
                                 <input
-                                  type="number"
-                                  min={0}
-                                  value={set.reps}
+                                  type="text"
+                                  inputMode="decimal"
+                                  placeholder="0"
+                                  value={set.reps || ""}
                                   onChange={(e) => updateSet(exIdx, setIdx, "reps", parseFloat(e.target.value) || 0)}
                                   className={NUMBER_INPUT_CLASS}
                                 />
                                 <input
-                                  type="number"
-                                  min={0}
-                                  step={0.5}
-                                  value={set.weight ?? 0}
+                                  type="text"
+                                  inputMode="decimal"
+                                  placeholder="0"
+                                  value={set.weight ?? ""}
                                   onChange={(e) => updateSet(exIdx, setIdx, "weight", parseFloat(e.target.value) || 0)}
                                   className={NUMBER_INPUT_CLASS}
                                 />
@@ -609,16 +610,18 @@ export default function TrainingTrackerPage() {
                             {selectedCategory === "Swimming" && (
                               <>
                                 <input
-                                  type="number"
-                                  min={0}
-                                  value={set.reps}
+                                  type="text"
+                                  inputMode="decimal"
+                                  placeholder="0"
+                                  value={set.reps || ""}
                                   onChange={(e) => updateSet(exIdx, setIdx, "reps", parseFloat(e.target.value) || 0)}
                                   className={NUMBER_INPUT_CLASS}
                                 />
                                 <input
-                                  type="number"
-                                  min={0}
-                                  value={set.distance ?? 50}
+                                  type="text"
+                                  inputMode="decimal"
+                                  placeholder="50"
+                                  value={set.distance ?? ""}
                                   onChange={(e) => updateSet(exIdx, setIdx, "distance", parseFloat(e.target.value) || 0)}
                                   className={NUMBER_INPUT_CLASS}
                                 />
@@ -628,23 +631,24 @@ export default function TrainingTrackerPage() {
                             {selectedCategory === "Running" && (
                               <>
                                 <input
-                                  type="number"
-                                  min={0}
-                                  step={0.1}
-                                  value={set.distance ?? 5}
+                                  type="text"
+                                  inputMode="decimal"
+                                  placeholder="5"
+                                  value={set.distance ?? ""}
                                   onChange={(e) => updateSet(exIdx, setIdx, "distance", parseFloat(e.target.value) || 0)}
                                   className={NUMBER_INPUT_CLASS}
                                 />
                                 <input
-                                  type="number"
-                                  min={0}
-                                  value={set.time ?? 30}
+                                  type="text"
+                                  inputMode="decimal"
+                                  placeholder="30"
+                                  value={set.time ?? ""}
                                   onChange={(e) => updateSet(exIdx, setIdx, "time", parseFloat(e.target.value) || 0)}
                                   className={NUMBER_INPUT_CLASS}
                                 />
                                 <input
-                                  type="number"
-                                  min={0}
+                                  type="text"
+                                  inputMode="decimal"
                                   placeholder="—"
                                   value={set.hr ?? ""}
                                   onChange={(e) => updateSet(exIdx, setIdx, "hr", parseFloat(e.target.value) || 0)}
@@ -694,9 +698,10 @@ export default function TrainingTrackerPage() {
                     Duration (min)
                   </label>
                   <input
-                    type="number"
-                    min={1}
-                    value={sessionDuration}
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="60"
+                    value={sessionDuration || ""}
                     onChange={(e) => setSessionDuration(parseInt(e.target.value) || 1)}
                     className="w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-500/40 transition-colors"
                   />

@@ -379,12 +379,15 @@ function RouteMapSnippet({ route }: { route: Post["route"] }) {
   );
 }
 
-function AIInsightBar({ recovery }: { recovery: number }) {
+function AIInsightBar({ recovery, insight }: { recovery: number; insight?: string }) {
   return (
     <div className={`${PANEL_CLASS} border-orange-500/20 bg-[linear-gradient(125deg,rgba(255,77,0,0.12),rgba(15,17,24,0.92))] p-4`}>
       <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-300">AI daily insight</p>
       <p className="mt-1 text-sm text-zinc-100 leading-relaxed">
-        Hey athlete, recovery is at <span className="font-semibold text-orange-300">{recovery}%</span>. This is a strong day for a heavy lower-body session.
+        {insight
+          ? insight
+          : <>Hey athlete, recovery is at <span className="font-semibold text-orange-300">{recovery}%</span>. Log your first training session and I&apos;ll give you personalised advice.</>
+        }
       </p>
     </div>
   );
@@ -526,19 +529,7 @@ function TrainingLoadCard() {
   );
 }
 
-function buildConsistencyHeatmap(trainingDaysPerWeek: number) {
-  const base = Math.max(1, Math.min(4, Math.round((trainingDaysPerWeek / 7) * 4)));
-  return Array.from({ length: 53 * 7 }, (_, idx) => {
-    const seed = (idx * 37 + trainingDaysPerWeek * 13) % 100;
-    if (seed < 24) return 0;
-    if (seed < 52) return Math.max(1, base - 1);
-    if (seed < 84) return base;
-    return Math.min(4, base + 1);
-  });
-}
-
-function ActivityHeatmap({ trainingDaysPerWeek }: { trainingDaysPerWeek: number }) {
-  const levels = useMemo(() => buildConsistencyHeatmap(trainingDaysPerWeek), [trainingDaysPerWeek]);
+function ActivityHeatmap({ levels }: { levels: number[] }) {
 
   return (
     <div className={`${PANEL_CLASS} p-4`}>
@@ -748,6 +739,10 @@ export default function DashboardPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [tab, setTab] = useState<"feed" | "blog">("feed");
   const [social, setSocial] = useState({ followers: 0, following: 0 });
+  const [postsCount, setPostsCount] = useState(0);
+  const [streakDays, setStreakDays] = useState<boolean[]>([false, false, false, false, false, false, false]);
+  const [heatmapLevels, setHeatmapLevels] = useState<number[]>([]);
+  const [aiInsight, setAiInsight] = useState("");
   const [composing, setComposing] = useState(false);
   const [composeType, setComposeType] = useState<"activity" | "blog">("activity");
   const [draft, setDraft] = useState({ title: "", content: "" });
@@ -784,15 +779,95 @@ export default function DashboardPage() {
     const loadPosts = () => {
       try {
         const stored: Post[] = JSON.parse(localStorage.getItem("fitsphere_posts") || "[]");
-        // Mark stored posts so we can identify user's own posts
         const userPosts = stored.map((p) => ({ ...p }));
         setPosts([...userPosts, ...MOCK_POSTS]);
+        setPostsCount(stored.length);
       } catch {
         setPosts([...MOCK_POSTS]);
       }
       try {
         const s = JSON.parse(localStorage.getItem("fitsphere_social") || "{}");
         setSocial({ followers: s.followers ?? 0, following: s.following ?? 0 });
+      } catch { /* ignore */ }
+
+      // Track daily login
+      try {
+        const today = new Date().toISOString().split("T")[0];
+        const loginDates: string[] = JSON.parse(localStorage.getItem("fitsphere_login_dates") || "[]");
+        if (!loginDates.includes(today)) {
+          loginDates.unshift(today);
+          localStorage.setItem("fitsphere_login_dates", JSON.stringify(loginDates.slice(0, 365)));
+        }
+      } catch { /* ignore */ }
+
+      // Compute weekly streak + heatmap from training sessions + login dates
+      try {
+        type RawSession = { date: string; category: string; exercises: Array<{ name: string; sets: Array<{ reps: number; weight?: number }> }> };
+        const trainingLogs: RawSession[] = JSON.parse(localStorage.getItem("fitsphere_training_logs") || "[]");
+        const loginDates: string[] = JSON.parse(localStorage.getItem("fitsphere_login_dates") || "[]");
+
+        // Weekly streak (Mon=0 … Sun=6)
+        const now = new Date();
+        const weekStart = new Date(now);
+        const dow = now.getDay(); // 0=Sun
+        weekStart.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
+        weekStart.setHours(0, 0, 0, 0);
+
+        const activeDays = Array(7).fill(false);
+        const allActive = new Set<string>([...loginDates, ...trainingLogs.map((s) => s.date)]);
+        allActive.forEach((dateStr) => {
+          const d = new Date(dateStr + "T00:00:00");
+          const diff = Math.round((d.getTime() - weekStart.getTime()) / 86400000);
+          if (diff >= 0 && diff < 7) activeDays[diff] = true;
+        });
+        setStreakDays(activeDays);
+
+        // 365-day heatmap
+        const heatmap = Array(53 * 7).fill(0);
+        const todayMs = new Date(new Date().toISOString().split("T")[0] + "T00:00:00").getTime();
+        trainingLogs.forEach((session) => {
+          const dMs = new Date(session.date + "T00:00:00").getTime();
+          const daysAgo = Math.round((todayMs - dMs) / 86400000);
+          if (daysAgo >= 0 && daysAgo < 371) {
+            const idx = 371 - 1 - daysAgo;
+            if (idx >= 0 && idx < heatmap.length) heatmap[idx] = Math.min(4, heatmap[idx] + 1);
+          }
+        });
+        loginDates.forEach((dateStr) => {
+          const dMs = new Date(dateStr + "T00:00:00").getTime();
+          const daysAgo = Math.round((todayMs - dMs) / 86400000);
+          if (daysAgo >= 0 && daysAgo < 371) {
+            const idx = 371 - 1 - daysAgo;
+            if (idx >= 0 && idx < heatmap.length && heatmap[idx] === 0) heatmap[idx] = 1;
+          }
+        });
+        setHeatmapLevels(heatmap);
+
+        // AI insight from most recent session
+        if (trainingLogs.length > 0) {
+          const last = trainingLogs[0];
+          const daysSince = Math.round((todayMs - new Date(last.date + "T00:00:00").getTime()) / 86400000);
+          const totalSets = last.exercises.reduce((sum, ex) => sum + ex.sets.length, 0);
+          const exName = last.exercises[0]?.name || "exercises";
+          const timeLabel = daysSince === 0 ? "today" : daysSince === 1 ? "yesterday" : `${daysSince} days ago`;
+          const adviceByCategory: Record<string, string> = {
+            Gym: daysSince === 0
+              ? `You trained ${exName} today — ${totalSets} sets logged. Great work! Focus on quality rest and protein intake tonight.`
+              : daysSince <= 2
+              ? `Last gym session was ${timeLabel} (${totalSets} sets of ${exName}). You're recovered — push for progressive overload today.`
+              : `It's been ${daysSince} days since your last gym session. Time to get back and hit a heavy compound movement.`,
+            Calisthenics: daysSince === 0
+              ? `Calisthenics session done today — ${totalSets} sets. Recovery is key; stretch and mobilize.`
+              : `Last calisthenics session was ${timeLabel}. ${daysSince >= 2 ? "Perfect time for skill practice or static holds." : "Easy movement or mobility recommended today."}`,
+            Running: daysSince === 0
+              ? `You ran today — great consistency! Focus on hydration and easy recovery.`
+              : `Last run was ${timeLabel}. ${daysSince >= 2 ? "Good recovery window — try a tempo or easy aerobic run." : "Consider cross-training or rest today."}`,
+            Swimming: daysSince === 0
+              ? `Swim session done today! Focus on technique drills in your next session.`
+              : `Last swim was ${timeLabel}. ${daysSince >= 2 ? "Good time for technique focus — pull drills and flip turns." : "Rest or light movement today."}`,
+          };
+          setAiInsight(adviceByCategory[last.category] || `Last ${last.category} session was ${timeLabel}. Keep building consistency!`);
+        }
       } catch { /* ignore */ }
     };
     loadPosts();
@@ -814,6 +889,40 @@ export default function DashboardPage() {
       return;
     }
 
+    // Load profile immediately: try full cache first, then fall back to individual keys
+    try {
+      const cached = localStorage.getItem("fitsphere_cached_profile");
+      if (cached) {
+        const cp = JSON.parse(cached) as Profile;
+        cp.profileImageDataUrl = localStorage.getItem("fitsphere_profile_image") || cp.profileImageDataUrl;
+        cp.coverImageDataUrl = localStorage.getItem("fitsphere_cover_image") || cp.coverImageDataUrl;
+        setProfile(cp);
+      } else {
+        // First load after fix — build a minimal profile from individual keys
+        const storedName = localStorage.getItem("fitsphere_display_name");
+        const storedImg = localStorage.getItem("fitsphere_profile_image");
+        const storedCover = localStorage.getItem("fitsphere_cover_image");
+        const storedData = JSON.parse(localStorage.getItem("fitsphere_profile_data") || "{}");
+        if (storedName) {
+          setProfile({
+            displayName: storedName,
+            email: "",
+            fitnessGoal: storedData.fitnessGoal || "Build performance",
+            preferredCategory: storedData.preferredCategory || "General fitness",
+            experienceLevel: storedData.experienceLevel || "",
+            heightCm: storedData.heightCm || 0,
+            weightKg: storedData.weightKg || 0,
+            trainingDaysPerWeek: storedData.trainingDaysPerWeek || 3,
+            weeklyWorkoutCount: 0,
+            weeklyRunKm: 0,
+            weeklyCaloriesBurned: 0,
+            profileImageDataUrl: storedImg || null,
+            coverImageDataUrl: storedCover || null,
+          });
+        }
+      }
+    } catch { /* ignore */ }
+
     fetch(`${API_BASE_URL}/api/auth/me`, {
       headers: {
         "Content-Type": "application/json",
@@ -833,6 +942,11 @@ export default function DashboardPage() {
           if (stored) profile.coverImageDataUrl = stored;
         }
         setProfile(profile);
+        // Cache for instant display on next page load
+        try {
+          localStorage.setItem("fitsphere_cached_profile", JSON.stringify(profile));
+          if (profile.displayName) localStorage.setItem("fitsphere_display_name", profile.displayName);
+        } catch { /* ignore */ }
       })
       .catch(() => null);
   }, []);
@@ -936,7 +1050,7 @@ export default function DashboardPage() {
                 </p>
                 <div className="mt-4 grid grid-cols-3 gap-2 border-t border-white/8 pt-4 text-center">
                   {[
-                    { label: "Posts", value: (() => { try { return JSON.parse(localStorage.getItem("fitsphere_posts") || "[]").length; } catch { return 0; } })() },
+                    { label: "Posts", value: postsCount },
                     { label: "Followers", value: social.followers },
                     { label: "Following", value: social.following },
                   ].map((stat) => (
@@ -982,25 +1096,25 @@ export default function DashboardPage() {
                 Weekly streak
               </p>
               <div className="flex gap-1.5">
-                {Array.from({ length: 7 }).map((_, idx) => (
-                  <div
-                    key={idx}
-                    className={`h-8 flex-1 rounded-lg ${
-                      idx < (profile?.trainingDaysPerWeek ?? 4)
-                        ? "bg-orange-500/80"
-                        : "border border-white/10 bg-white/5"
-                    }`}
-                  />
+                {["M", "T", "W", "T", "F", "S", "S"].map((day, idx) => (
+                  <div key={idx} className="flex flex-col items-center gap-1 flex-1">
+                    <div
+                      className={`h-8 w-full rounded-lg ${
+                        streakDays[idx] ? "bg-orange-500/80" : "border border-white/10 bg-white/5"
+                      }`}
+                    />
+                    <span className="text-[9px] text-zinc-600">{day}</span>
+                  </div>
                 ))}
               </div>
-              <p className="mt-2 text-xs text-zinc-500">{profile?.trainingDaysPerWeek ?? 0} / 7 active days</p>
+              <p className="mt-1 text-xs text-zinc-500">{streakDays.filter(Boolean).length} / 7 active days</p>
             </div>
 
-            <ActivityHeatmap trainingDaysPerWeek={profile?.trainingDaysPerWeek ?? 4} />
+            <ActivityHeatmap levels={heatmapLevels.length > 0 ? heatmapLevels : Array(53 * 7).fill(0)} />
           </aside>
 
           <main className="min-w-0 space-y-4">
-            <AIInsightBar recovery={recovery} />
+            <AIInsightBar recovery={recovery} insight={aiInsight || undefined} />
 
             <div className={`${PANEL_CLASS} p-4`}>
               {!composing ? (
@@ -1109,7 +1223,7 @@ export default function DashboardPage() {
             ))}
           </main>
 
-          <aside className="grid grid-cols-1 gap-4 auto-rows-[minmax(120px,auto)] sm:grid-cols-2 lg:grid-cols-2">
+          <aside className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-2 auto-rows-min">
             <div className="sm:col-span-2">
               <LiveTicker />
             </div>
