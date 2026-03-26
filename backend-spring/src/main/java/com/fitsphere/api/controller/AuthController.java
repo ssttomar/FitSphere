@@ -79,6 +79,17 @@ public class AuthController {
         return ResponseEntity.ok(authService.googleAuth(request.idToken()));
     }
 
+    // ── Google new-user username setup ────────────────────────────────────────
+
+    @PostMapping("/setup-username")
+    public ResponseEntity<AuthDtos.BasicResponse> setupUsername(
+            @AuthenticationPrincipal String subject,
+            @Valid @RequestBody AuthDtos.SetupUsernameRequest request) {
+        UUID userId = resolveUserId(subject);
+        authService.setupUsername(userId, request.username());
+        return ResponseEntity.ok(new AuthDtos.BasicResponse("Username set successfully"));
+    }
+
     // ── Password reset ────────────────────────────────────────────────────────
 
     @PostMapping("/forgot-password")

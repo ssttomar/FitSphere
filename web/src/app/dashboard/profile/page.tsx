@@ -116,6 +116,8 @@ function MacroRingSmall({
 }
 
 type Profile = {
+  userId: string;
+  username: string;
   displayName: string;
   email: string;
   fitnessGoal: string;
@@ -131,6 +133,17 @@ type Profile = {
   weeklyWorkoutCount: number;
   weeklyRunKm: number;
   weeklyCaloriesBurned: number;
+  followerCount: number;
+  followingCount: number;
+};
+
+type UserSummary = {
+  id: string;
+  username: string;
+  displayName: string;
+  profileImageDataUrl: string;
+  experienceLevel: string;
+  preferredCategory: string;
 };
 
 type EditProfileForm = {
@@ -261,6 +274,9 @@ export default function ProfilePage() {
   const [fallbackName, setFallbackName] = useState("Athlete");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [myPosts, setMyPosts] = useState<StoredPost[]>([]);
+  const [followListOpen, setFollowListOpen] = useState<"followers" | "following" | null>(null);
+  const [followList, setFollowList] = useState<UserSummary[]>([]);
+  const [followListLoading, setFollowListLoading] = useState(false);
 
   useEffect(() => {
     // Load posts from localStorage
@@ -290,7 +306,19 @@ export default function ProfilePage() {
       })
       .then((data) => {
         const loaded = data as Profile;
+        // Merge images from localStorage if the DB record has none (e.g. after a logout cleared them)
+        if (!loaded.profileImageDataUrl) {
+          const cached = localStorage.getItem("fitsphere_profile_image");
+          if (cached) loaded.profileImageDataUrl = cached;
+        }
+        if (!loaded.coverImageDataUrl) {
+          const cached = localStorage.getItem("fitsphere_cover_image");
+          if (cached) loaded.coverImageDataUrl = cached;
+        }
         setProfile(loaded);
+        if (loaded.username) localStorage.setItem("fitsphere_username", loaded.username);
+        if (loaded.profileImageDataUrl) localStorage.setItem("fitsphere_profile_image", loaded.profileImageDataUrl);
+        if (loaded.coverImageDataUrl) localStorage.setItem("fitsphere_cover_image", loaded.coverImageDataUrl);
         localStorage.setItem(
           "fitsphere_profile_data",
           JSON.stringify({
@@ -324,9 +352,29 @@ export default function ProfilePage() {
     : myPosts.filter((p) => p.type === "activity");
 
   const openEditor = () => {
-    setForm(profile ? toEditForm(profile) : emptyEditForm(fallbackName));
+    if (profile) {
+      setForm(toEditForm(profile));
+    } else {
+      const base = emptyEditForm(fallbackName);
+      base.profileImageDataUrl = localStorage.getItem("fitsphere_profile_image") || "";
+      base.coverImageDataUrl = localStorage.getItem("fitsphere_cover_image") || "";
+      setForm(base);
+    }
     setSaveError(null);
     setEditing(true);
+  };
+
+  const openFollowList = (type: "followers" | "following") => {
+    if (!profile?.userId) return;
+    setFollowListOpen(type);
+    setFollowListLoading(true);
+    const token = localStorage.getItem("fitsphere_token");
+    fetch(`${API_BASE_URL}/api/users/${profile.userId}/${type}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => { setFollowList(data); setFollowListLoading(false); })
+      .catch(() => { setFollowList([]); setFollowListLoading(false); });
   };
 
   const toggleArrayValue = (field: "fitnessGoals" | "preferredCategories", value: string) => {
@@ -411,8 +459,8 @@ export default function ProfilePage() {
         trainingDaysPerWeek: Number(form.trainingDaysPerWeek),
         sessionDurationMinutes: Number(form.sessionDurationMinutes),
         notes: form.notes.trim(),
-        profileImageDataUrl: form.profileImageDataUrl || null,
-        coverImageDataUrl: form.coverImageDataUrl || null,
+        profileImageDataUrl: form.profileImageDataUrl,   // "" = clear, data URL = update, null never sent
+        coverImageDataUrl: form.coverImageDataUrl,
       };
 
       const controller = new AbortController();
@@ -565,6 +613,9 @@ export default function ProfilePage() {
           <h1 className="text-2xl font-black text-white" style={{ fontFamily: "var(--font-display)" }}>
             {profile?.displayName || fallbackName}
           </h1>
+          {profile?.username && (
+            <p className="mt-0.5 text-sm font-medium text-orange-400">@{profile.username}</p>
+          )}
           <p className="mt-1 text-sm text-zinc-400">{profile?.email}</p>
 
           <div className="mt-3 flex flex-wrap gap-2">
@@ -580,17 +631,22 @@ export default function ProfilePage() {
           {profile?.notes && <p className="mt-3 max-w-lg text-sm leading-relaxed text-zinc-300">{profile.notes}</p>}
 
           <div className="mt-6 grid grid-cols-4 gap-4 border-t border-white/8 pt-5">
-            {[
-              { label: "Activities", value: myPosts.filter((p) => p.type === "activity").length },
-              { label: "Posts", value: myPosts.length },
-              { label: "Followers", value: (() => { try { return JSON.parse(localStorage.getItem("fitsphere_social") || "{}").followers ?? 0; } catch { return 0; } })() },
-              { label: "Following", value: (() => { try { return JSON.parse(localStorage.getItem("fitsphere_social") || "{}").following ?? 0; } catch { return 0; } })() },
-            ].map((item) => (
-              <div key={item.label} className="text-center">
-                <p className="text-2xl font-black text-white">{item.value}</p>
-                <p className="mt-0.5 text-xs text-zinc-500">{item.label}</p>
-              </div>
-            ))}
+            <div className="text-center">
+              <p className="text-2xl font-black text-white">{myPosts.filter((p) => p.type === "activity").length}</p>
+              <p className="mt-0.5 text-xs text-zinc-500">Activities</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-black text-white">{myPosts.length}</p>
+              <p className="mt-0.5 text-xs text-zinc-500">Posts</p>
+            </div>
+            <button onClick={() => openFollowList("followers")} className="text-center hover:opacity-75 transition-opacity">
+              <p className="text-2xl font-black text-white">{profile?.followerCount ?? 0}</p>
+              <p className="mt-0.5 text-xs text-zinc-500">Followers</p>
+            </button>
+            <button onClick={() => openFollowList("following")} className="text-center hover:opacity-75 transition-opacity">
+              <p className="text-2xl font-black text-white">{profile?.followingCount ?? 0}</p>
+              <p className="mt-0.5 text-xs text-zinc-500">Following</p>
+            </button>
           </div>
         </div>
       </div>
@@ -740,6 +796,50 @@ export default function ProfilePage() {
         </div>
       )}
 
+      {/* Followers / Following modal */}
+      {followListOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm px-4" onClick={() => setFollowListOpen(null)}>
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0f1117] pb-4 max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/8">
+              <h2 className="font-bold text-white capitalize">{followListOpen}</h2>
+              <button onClick={() => setFollowListOpen(null)} className="text-zinc-500 hover:text-white">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              {followListLoading ? (
+                <div className="flex justify-center py-10">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
+                </div>
+              ) : followList.length === 0 ? (
+                <p className="text-center text-zinc-500 text-sm py-10">No {followListOpen} yet.</p>
+              ) : (
+                followList.map((u) => (
+                  <a key={u.id} href={`/dashboard/users/${u.id}`} onClick={() => setFollowListOpen(null)} className="flex w-full items-center gap-3 px-5 py-3 hover:bg-white/5 transition-colors">
+                    {u.profileImageDataUrl ? (
+                      <img src={u.profileImageDataUrl} alt={u.displayName} className="h-10 w-10 rounded-full object-cover shrink-0" />
+                    ) : (
+                      <div className="h-10 w-10 rounded-full bg-gradient-to-br from-orange-500 to-orange-700 flex items-center justify-center text-sm font-black text-white shrink-0">
+                        {u.displayName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)}
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-white truncate">{u.displayName}</p>
+                      {u.username && <p className="text-xs text-zinc-500 truncate">@{u.username}</p>}
+                    </div>
+                    {u.preferredCategory && (
+                      <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-zinc-400">{u.preferredCategory}</span>
+                    )}
+                  </a>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {editing && form && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <form
@@ -831,6 +931,10 @@ export default function ProfilePage() {
                   onChange={(event) => setForm({ ...form, displayName: event.target.value })}
                   className="mt-1 w-full rounded-lg border border-white/12 bg-white/6 px-3 py-2 text-white outline-none focus:border-orange-500/60"
                 />
+              </label>
+              <label className="text-sm text-zinc-300">
+                Username (read only)
+                <input value={profile?.username ? `@${profile.username}` : ""} readOnly className="mt-1 w-full rounded-lg border border-white/12 bg-white/10 px-3 py-2 text-zinc-400" />
               </label>
               <label className="text-sm text-zinc-300">
                 Email (read only)

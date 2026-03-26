@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { API_BASE_URL } from "@/lib/api";
+import { addNotification } from "@/lib/notifications";
 import {
   PolarAngleAxis,
   PolarGrid,
@@ -13,6 +14,7 @@ import {
 } from "recharts";
 
 type Profile = {
+  userId: string;
   displayName: string;
   email: string;
   fitnessGoal: string;
@@ -26,6 +28,8 @@ type Profile = {
   weeklyCaloriesBurned: number;
   profileImageDataUrl?: string | null;
   coverImageDataUrl?: string | null;
+  followerCount?: number;
+  followingCount?: number;
 };
 
 type PostMedia = {
@@ -946,23 +950,35 @@ export default function DashboardPage() {
         try {
           localStorage.setItem("fitsphere_cached_profile", JSON.stringify(profile));
           if (profile.displayName) localStorage.setItem("fitsphere_display_name", profile.displayName);
+          if (profile.profileImageDataUrl) localStorage.setItem("fitsphere_profile_image", profile.profileImageDataUrl);
+          if (profile.coverImageDataUrl) localStorage.setItem("fitsphere_cover_image", profile.coverImageDataUrl);
+          // Notify layout navbar to update avatar
+          window.dispatchEvent(new CustomEvent("fitsphere:profile-updated", {
+            detail: {
+              displayName: profile.displayName,
+              profileImage: profile.profileImageDataUrl || null,
+            },
+          }));
         } catch { /* ignore */ }
       })
       .catch(() => null);
   }, []);
 
   const handleLike = useCallback((id: string) => {
-    setPosts((prev) =>
-      prev.map((post) =>
+    setPosts((prev) => {
+      const updated = prev.map((post) =>
         post.id === id
-          ? {
-              ...post,
-              liked: !post.liked,
-              likes: post.liked ? post.likes - 1 : post.likes + 1,
-            }
+          ? { ...post, liked: !post.liked, likes: post.liked ? post.likes - 1 : post.likes + 1 }
           : post,
-      ),
-    );
+      );
+      const post = prev.find((p) => p.id === id);
+      if (post && !post.liked) {
+        window.setTimeout(() => {
+          addNotification({ type: "like", message: `${post.author} liked your post "${post.title}"` });
+        }, 800);
+      }
+      return updated;
+    });
   }, []);
 
   const submitPost = () => {
@@ -1049,16 +1065,18 @@ export default function DashboardPage() {
                   {profile?.preferredCategory || "General fitness"}
                 </p>
                 <div className="mt-4 grid grid-cols-3 gap-2 border-t border-white/8 pt-4 text-center">
-                  {[
-                    { label: "Posts", value: postsCount },
-                    { label: "Followers", value: social.followers },
-                    { label: "Following", value: social.following },
-                  ].map((stat) => (
-                    <div key={stat.label}>
-                      <p className="text-lg font-black leading-none text-white">{stat.value}</p>
-                      <p className="mt-0.5 text-xs text-zinc-500">{stat.label}</p>
-                    </div>
-                  ))}
+                  <div>
+                    <p className="text-lg font-black leading-none text-white">{postsCount}</p>
+                    <p className="mt-0.5 text-xs text-zinc-500">Posts</p>
+                  </div>
+                  <Link href="/dashboard/profile" className="hover:opacity-75 transition-opacity">
+                    <p className="text-lg font-black leading-none text-white">{profile?.followerCount ?? social.followers}</p>
+                    <p className="mt-0.5 text-xs text-zinc-500">Followers</p>
+                  </Link>
+                  <Link href="/dashboard/profile" className="hover:opacity-75 transition-opacity">
+                    <p className="text-lg font-black leading-none text-white">{profile?.followingCount ?? social.following}</p>
+                    <p className="mt-0.5 text-xs text-zinc-500">Following</p>
+                  </Link>
                 </div>
               </div>
             </div>

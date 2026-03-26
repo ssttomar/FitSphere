@@ -10,7 +10,7 @@ import { API_BASE_URL, ApiError } from "@/lib/api";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Mode = "login" | "signup";
-type SignupStep = "method" | "phone" | "phone-otp" | "details" | "email" | "email-otp";
+type SignupStep = "method" | "phone" | "phone-otp" | "details" | "email" | "email-otp" | "google-setup";
 
 type GoogleCredentialResponse = { credential: string };
 
@@ -81,6 +81,19 @@ const COUNTRY_CODES = [
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+function decodeGoogleJwt(token: string): { name?: string; email?: string; picture?: string } {
+  try {
+    const payload = token.split(".")[1];
+    return JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+  } catch {
+    return {};
+  }
+}
+
+function suggestUsername(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").slice(0, 20);
+}
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
@@ -208,6 +221,10 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
+  // Google new-user setup
+  const [googleName, setGoogleName] = useState("");
+  const [googleEmail, setGoogleEmail] = useState("");
+  const [googlePicture, setGooglePicture] = useState("");
 
   const fullPhone = countryCode.dial + phoneLocal.replace(/\D/g, "");
 
@@ -220,7 +237,18 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
         body: JSON.stringify({ idToken: response.credential }),
       });
       saveAuth(res);
-      onDone(Boolean(res.isNewUser));
+      if (res.isNewUser) {
+        // Decode Google JWT to pre-fill info
+        const gPayload = decodeGoogleJwt(response.credential);
+        setGoogleName(gPayload.name || res.displayName || "");
+        setGoogleEmail(gPayload.email || "");
+        setGooglePicture(gPayload.picture || "");
+        setDisplayName(gPayload.name || res.displayName || "");
+        setUsername(suggestUsername(gPayload.name || res.displayName || ""));
+        setStep("google-setup");
+      } else {
+        onDone(false);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Google sign-in failed");
     } finally {
@@ -232,11 +260,16 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
   useEffect(() => {
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     if (!clientId) return;
+    if (window.__gsiLoaded) {
+      window.google?.accounts?.id?.initialize({ client_id: clientId, callback: handleGoogleCredential });
+      return;
+    }
     const script = document.createElement("script");
     script.src = "https://accounts.google.com/gsi/client";
     script.async = true;
     script.defer = true;
     script.onload = () => {
+      window.__gsiLoaded = true;
       window.google?.accounts?.id?.initialize({
         client_id: clientId,
         callback: handleGoogleCredential,
@@ -360,6 +393,23 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
     finally { setLoading(false); }
   };
 
+  const handleGoogleSetup = async () => {
+    if (username.length < 3 || usernameStatus === "taken") { setError("Choose a valid available username"); return; }
+    const token = localStorage.getItem("fitsphere_token");
+    if (!token) { setError("Session expired, please try again"); return; }
+    setLoading(true); setError(null);
+    try {
+      await apiFetch("/api/auth/setup-username", {
+        method: "POST",
+        body: JSON.stringify({ username }),
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      localStorage.setItem("fitsphere_username", username);
+      onDone(true);
+    } catch (e) { setError(e instanceof Error ? e.message : "Failed to set username"); }
+    finally { setLoading(false); }
+  };
+
   // Auto-submit email OTP when all 6 filled
   useEffect(() => {
     if (step === "email-otp" && emailOtp.every(Boolean)) {
@@ -374,7 +424,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
   return (
     <div className="w-full max-w-sm">
       {/* Progress dots */}
-      {step !== "method" && (
+      {step !== "method" && step !== "google-setup" && (
         <div className="flex justify-center gap-2 mb-8">
           {progressSteps.map((s, i) => (
             <div
@@ -390,7 +440,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
       )}
 
       {/* Back button */}
-      {step !== "method" && (
+      {step !== "method" && step !== "google-setup" && (
         <button
           onClick={() => {
             setError(null);
@@ -705,8 +755,83 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
         </>
       )}
 
+      {/* ── Step: google-setup ── */}
+      {step === "google-setup" && (
+        <>
+          <div className="mb-6">
+            <h1 className="text-2xl font-black text-white">Almost there!</h1>
+            <p className="text-zinc-400 text-sm mt-1">Choose a username to complete your account.</p>
+          </div>
+
+          <div className="space-y-4">
+            {/* Google profile preview */}
+            <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+              {googlePicture ? (
+                <img src={googlePicture} alt="" className="h-10 w-10 rounded-full object-cover" />
+              ) : (
+                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-orange-500 to-orange-700 flex items-center justify-center text-sm font-black text-white">
+                  {googleName.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div>
+                <p className="text-sm font-semibold text-white">{googleName}</p>
+                <p className="text-xs text-zinc-500">{googleEmail}</p>
+              </div>
+              <span className="ml-auto text-xs text-emerald-400 font-semibold">✓ Google</span>
+            </div>
+
+            {/* Username */}
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-1.5">Username</label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">@</span>
+                <input
+                  value={username}
+                  onChange={(e) => {
+                    setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, ""));
+                    setError(null);
+                  }}
+                  placeholder="your_username"
+                  className="w-full rounded-xl border border-white/12 bg-white/6 pl-8 pr-10 py-2.5 text-sm text-white outline-none focus:border-orange-500/60"
+                />
+                {usernameStatus === "checking" && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-500">...</span>
+                )}
+                {usernameStatus === "available" && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-emerald-400">✓</span>
+                )}
+                {usernameStatus === "taken" && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-red-400">✗</span>
+                )}
+              </div>
+              {usernameStatus === "taken" && (
+                <p className="mt-1 text-xs text-red-400">Username taken — try another</p>
+              )}
+            </div>
+
+            {error && (
+              <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-3">
+                <p className="text-sm text-red-300">{error}</p>
+              </div>
+            )}
+
+            <button
+              onClick={handleGoogleSetup}
+              disabled={loading || usernameStatus === "taken" || usernameStatus === "checking" || username.length < 3}
+              className="w-full rounded-xl bg-orange-500 hover:bg-orange-400 px-5 py-3.5 text-sm font-bold text-white transition-colors disabled:opacity-50"
+            >
+              {loading ? "Setting up..." : "Continue →"}
+            </button>
+
+            <p className="text-center text-xs text-zinc-600">
+              You&apos;ll set up your fitness profile in the next step.
+            </p>
+          </div>
+        </>
+      )}
+
       {/* Terms */}
-      {step !== "method" && (
+      {step !== "method" && step !== "google-setup" && (
         <p className="mt-6 text-center text-xs text-zinc-600 leading-relaxed">
           By continuing you agree to our{" "}
           <span className="text-zinc-400 cursor-pointer hover:text-white">Terms of Service</span> and{" "}
@@ -751,7 +876,11 @@ function LoginForm({ onDone, onSwitchToSignup }: {
   // Load Google Identity Services
   useEffect(() => {
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    if (!clientId || window.__gsiLoaded) return;
+    if (!clientId) return;
+    if (window.__gsiLoaded) {
+      window.google?.accounts?.id?.initialize({ client_id: clientId, callback: handleGoogleCredential });
+      return;
+    }
     const script = document.createElement("script");
     script.src = "https://accounts.google.com/gsi/client";
     script.async = true; script.defer = true;

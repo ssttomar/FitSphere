@@ -4,13 +4,14 @@ services:
       context: ./backend-spring
     ports:
       - "8081:8080"
+    env_file:
+      - .env
     environment:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/fitsphere
       - SPRING_DATASOURCE_USERNAME=fitsphere
       - SPRING_DATASOURCE_PASSWORD=fitsphere
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_DATA_REDIS_PORT=6379
-      - APP_JWT_SECRET=replace-this-with-a-long-secret-key-recommended-64-chars
       - APP_JWT_EXPIRATION_SECONDS=7200
       - APP_AI_BASE_URL=http://ai-service:8000
     depends_on:

@@ -39,13 +39,11 @@ app:
   ai:
     base-url: http://localhost:8000
 
-# ── Twilio SMS (optional) ──────────────────────────────────────────────────────
+# ── Fast2SMS (optional) ────────────────────────────────────────────────────────
 # Leave blank to run in dev mode (OTP printed in logs + returned in API response).
-# Sign up at https://twilio.com → get Account SID, Auth Token, and a phone number.
-twilio:
-  account-sid: ${TWILIO_ACCOUNT_SID:}
-  auth-token: ${TWILIO_AUTH_TOKEN:}
-  phone-number: ${TWILIO_PHONE_NUMBER:}
+# Sign up at https://fast2sms.com → Dashboard → Dev API → copy your API key.
+fast2sms:
+  api-key: ${FAST2SMS_API_KEY:}
 
 # ── Google OAuth (optional) ────────────────────────────────────────────────────
 # Create a project at https://console.cloud.google.com → OAuth 2.0 Client IDs

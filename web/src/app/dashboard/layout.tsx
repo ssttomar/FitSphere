@@ -4,6 +4,7 @@ import { ChangeEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Logo } from "@/components/logo";
+import { AppNotification, getNotifications, markAllRead, unreadCount, timeAgo } from "@/lib/notifications";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -408,16 +409,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname();
   const [displayName, setDisplayName] = useState("Athlete");
+  const [username, setUsername] = useState("");
   const [initials, setInitials] = useState("A");
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notifCount, setNotifCount] = useState(0);
   const dropRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
 
   const syncFromStorage = () => {
     const name = localStorage.getItem("fitsphere_display_name") || "Athlete";
     const img = localStorage.getItem("fitsphere_profile_image");
+    const uname = localStorage.getItem("fitsphere_username") || "";
     setDisplayName(name);
+    setUsername(uname);
     setInitials(name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2));
     setProfileImage(img || null);
   };
@@ -445,9 +454,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (dropRef.current && !dropRef.current.contains(e.target as Node)) setDropdownOpen(false);
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  useEffect(() => {
+    const syncNotifs = () => {
+      setNotifications(getNotifications());
+      setNotifCount(unreadCount());
+    };
+    syncNotifs();
+    window.addEventListener("fitsphere:notification", syncNotifs);
+    return () => window.removeEventListener("fitsphere:notification", syncNotifs);
   }, []);
 
   const logout = () => {
@@ -459,7 +479,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { href: "/dashboard", label: "Feed" },
     { href: "/dashboard/training", label: "Training" },
     { href: "/dashboard/goals", label: "Goals" },
-    { href: "/dashboard/search", label: "Search" },
   ];
 
   return (
@@ -487,8 +506,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             ))}
           </div>
 
+          {/* Search bar */}
+          <div className="hidden md:flex flex-1 max-w-xs mx-4">
+            <div className="relative w-full">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+              </svg>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && searchQuery.trim()) {
+                    router.push(`/dashboard/search?q=${encodeURIComponent(searchQuery.trim())}`);
+                  }
+                }}
+                placeholder="Search athletes, workouts..."
+                className="w-full rounded-xl border border-white/10 bg-white/5 pl-9 pr-4 py-2 text-sm text-white placeholder-zinc-500 outline-none focus:border-orange-500/40 transition-colors"
+              />
+            </div>
+          </div>
+
           {/* Spacer */}
-          <div className="flex-1" />
+          <div className="flex-1 md:hidden" />
 
           {/* Share Progress — ghost button */}
           <button
@@ -517,12 +557,61 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </Link>
 
           {/* Notifications */}
-          <button className="relative p-2 text-zinc-400 hover:text-white transition-colors">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
-            </svg>
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-orange-500" />
-          </button>
+          <div className="relative" ref={notifRef}>
+            <button
+              onClick={() => {
+                setNotifOpen((o) => !o);
+                if (!notifOpen) {
+                  markAllRead();
+                  setNotifCount(0);
+                  setNotifications(getNotifications());
+                }
+              }}
+              className="relative p-2 text-zinc-400 hover:text-white transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+              </svg>
+              {notifCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full bg-orange-500 flex items-center justify-center text-[10px] font-black text-white px-1">
+                  {notifCount > 99 ? "99+" : notifCount}
+                </span>
+              )}
+            </button>
+
+            {notifOpen && (
+              <div className="absolute right-0 top-full mt-2 w-80 rounded-xl border border-white/10 bg-[#12141c] shadow-2xl overflow-hidden z-50">
+                <div className="px-4 py-3 border-b border-white/8 flex items-center justify-between">
+                  <p className="text-sm font-bold text-white">Notifications</p>
+                  <span className="text-xs text-zinc-500">{notifications.length} total</span>
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-8 text-center">
+                      <p className="text-sm text-zinc-500">No notifications yet</p>
+                      <p className="text-xs text-zinc-600 mt-1">Like posts or follow athletes to get started</p>
+                    </div>
+                  ) : (
+                    notifications.map((n) => (
+                      <div key={n.id} className="flex items-start gap-3 px-4 py-3 hover:bg-white/4 transition-colors border-b border-white/5 last:border-0">
+                        <div className={`mt-0.5 shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm ${
+                          n.type === "like" ? "bg-red-500/20 text-red-400" :
+                          n.type === "follow" ? "bg-orange-500/20 text-orange-400" :
+                          "bg-blue-500/20 text-blue-400"
+                        }`}>
+                          {n.type === "like" ? "❤️" : n.type === "follow" ? "👤" : "💬"}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-zinc-200 leading-snug">{n.message}</p>
+                          <p className="text-xs text-zinc-500 mt-0.5">{timeAgo(n.time)}</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Profile dropdown */}
           <div className="relative" ref={dropRef}>
@@ -537,7 +626,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   {initials}
                 </div>
               )}
-              <span className="hidden md:block text-sm text-white font-medium max-w-[100px] truncate">{displayName}</span>
+              <div className="hidden md:flex flex-col items-start">
+                <span className="text-sm text-white font-medium max-w-[100px] truncate leading-tight">{displayName}</span>
+                {username && <span className="text-[11px] text-orange-400 leading-tight">@{username}</span>}
+              </div>
               <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
               </svg>

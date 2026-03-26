@@ -3,6 +3,7 @@ package com.fitsphere.api.service;
 import com.fitsphere.api.dto.AuthDtos;
 import com.fitsphere.api.model.FitnessUser;
 import com.fitsphere.api.repository.FitnessUserRepository;
+import com.fitsphere.api.repository.FollowRepository;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +26,7 @@ public class AuthService {
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final FitnessUserRepository userRepository;
+    private final FollowRepository followRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final OtpService otpService;
@@ -35,12 +37,14 @@ public class AuthService {
     private String googleClientId;
 
     public AuthService(FitnessUserRepository userRepository,
+                       FollowRepository followRepository,
                        PasswordEncoder passwordEncoder,
                        JwtService jwtService,
                        OtpService otpService,
                        SmsService smsService,
                        EmailOtpService emailOtpService) {
         this.userRepository = userRepository;
+        this.followRepository = followRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.otpService = otpService;
@@ -348,10 +352,32 @@ public class AuthService {
         user.setTrainingDaysPerWeek(request.trainingDaysPerWeek());
         user.setSessionDurationMinutes(request.sessionDurationMinutes());
         user.setNotes(request.notes());
-        user.setProfileImageDataUrl(request.profileImageDataUrl());
-        user.setCoverImageDataUrl(request.coverImageDataUrl());
+        // Only overwrite images if the client explicitly sent a value (null = not provided → keep existing)
+        if (request.profileImageDataUrl() != null) {
+            user.setProfileImageDataUrl(request.profileImageDataUrl().isEmpty() ? null : request.profileImageDataUrl());
+        }
+        if (request.coverImageDataUrl() != null) {
+            user.setCoverImageDataUrl(request.coverImageDataUrl().isEmpty() ? null : request.coverImageDataUrl());
+        }
 
         return toProfile(userRepository.save(user));
+    }
+
+    public void setupUsername(UUID userId, String username) {
+        String uname = username.trim().toLowerCase();
+        if (!uname.matches("[a-z0-9._]+") || uname.length() < 3) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid username");
+        }
+        if (userRepository.existsByUsername(uname)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Username already taken");
+        }
+        FitnessUser user = userRepository.findById(userId)
+            .orElseThrow(() -> new EntityNotFoundException("User not found"));
+        if (user.getUsername() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Username already set");
+        }
+        user.setUsername(uname);
+        userRepository.save(user);
     }
 
     public AuthDtos.UserProfileResponse getProfile(UUID userId) {
@@ -412,7 +438,9 @@ public class AuthService {
             user.getCoverImageDataUrl(),
             user.getWeeklyWorkoutCount() == null ? 0 : user.getWeeklyWorkoutCount(),
             user.getWeeklyRunKm() == null ? 0 : user.getWeeklyRunKm(),
-            user.getWeeklyCaloriesBurned() == null ? 0 : user.getWeeklyCaloriesBurned()
+            user.getWeeklyCaloriesBurned() == null ? 0 : user.getWeeklyCaloriesBurned(),
+            followRepository.countByFollowingId(user.getId()),
+            followRepository.countByFollowerId(user.getId())
         );
     }
 

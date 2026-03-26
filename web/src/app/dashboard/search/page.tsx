@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { API_BASE_URL } from "@/lib/api";
+import { addNotification } from "@/lib/notifications";
 
 type UserResult = {
   id: string;
@@ -44,13 +45,13 @@ const DEMO_USERS: UserResult[] = [
 
 export default function SearchPage() {
   const [query, setQuery] = useState("");
+  const [submittedQuery, setSubmittedQuery] = useState("");
   const [results, setResults] = useState<UserResult[]>([]);
   const [followState, setFollowState] = useState<FollowState>({});
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
     // Load follow state from localStorage
     try {
       const stored = JSON.parse(localStorage.getItem("fitsphere_follow_state") || "{}");
@@ -60,13 +61,13 @@ export default function SearchPage() {
   }, []);
 
   useEffect(() => {
-    if (!query.trim()) {
+    if (!submittedQuery.trim()) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setResults([]);
       return;
     }
     setLoading(true);
-    const q = query.toLowerCase().trim();
+    const q = submittedQuery.toLowerCase().trim();
 
     // Try backend search first, fall back to demo users
     const token = localStorage.getItem("fitsphere_token");
@@ -105,29 +106,41 @@ export default function SearchPage() {
       ));
       setLoading(false);
     }
-  }, [query]);
+  }, [submittedQuery]);
 
-  const handleFollow = (userId: string) => {
-    setFollowState((prev) => {
-      const current = prev[userId] || "none";
-      let next: "none" | "requested" | "following";
-      if (current === "none") next = "following";
-      else if (current === "following") next = "none";
-      else next = "none"; // cancel request
+  const handleFollow = async (userId: string) => {
+    const current = followState[userId] || "none";
+    const isFollowing = current === "following";
+    const token = localStorage.getItem("fitsphere_token");
+    const user = [...results, ...DEMO_USERS].find((u) => u.id === userId);
 
-      const updated = { ...prev, [userId]: next };
+    // Optimistic update
+    const next = isFollowing ? "none" : "following";
+    setFollowState((prev) => ({ ...prev, [userId]: next }));
+
+    if (token) {
       try {
-        localStorage.setItem("fitsphere_follow_state", JSON.stringify(updated));
-
-        // Update social counts
-        const social = JSON.parse(localStorage.getItem("fitsphere_social") || "{}");
-        const prevFollowing = social.following ?? 0;
-        if (next === "following") social.following = prevFollowing + 1;
-        else if (current === "following") social.following = Math.max(0, prevFollowing - 1);
-        localStorage.setItem("fitsphere_social", JSON.stringify(social));
-      } catch { /* ignore */ }
-      return updated;
-    });
+        const res = await fetch(`${API_BASE_URL}/api/users/${userId}/follow`, {
+          method: isFollowing ? "DELETE" : "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          // Revert on failure
+          setFollowState((prev) => ({ ...prev, [userId]: current }));
+        } else if (!isFollowing && user) {
+          addNotification({ type: "follow", message: `You are now following ${user.displayName}` });
+        }
+      } catch {
+        setFollowState((prev) => ({ ...prev, [userId]: current }));
+      }
+    } else {
+      // Demo mode
+      if (!isFollowing && user) {
+        window.setTimeout(() => {
+          addNotification({ type: "follow", message: `${user.displayName} started following you back` });
+        }, 1000);
+      }
+    }
   };
 
   const suggested = DEMO_USERS.filter((u) => !followState[u.id] || followState[u.id] === "none").slice(0, 4);
@@ -148,12 +161,13 @@ export default function SearchPage() {
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") setSubmittedQuery(query.trim()); }}
           placeholder="Search by name or username..."
           className="w-full rounded-2xl border border-white/10 bg-[#0f1117] pl-12 pr-4 py-4 text-white placeholder-zinc-500 outline-none focus:border-orange-500/40 text-base"
         />
         {query && (
           <button
-            onClick={() => setQuery("")}
+            onClick={() => { setQuery(""); setSubmittedQuery(""); }}
             className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -164,14 +178,14 @@ export default function SearchPage() {
       </div>
 
       {/* Results */}
-      {query ? (
+      {submittedQuery ? (
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-3">
             {loading ? "Searching..." : `${results.length} result${results.length !== 1 ? "s" : ""}`}
           </p>
           {results.length === 0 && !loading && (
             <div className="rounded-2xl border border-white/8 bg-[#0f1117] p-8 text-center">
-              <p className="text-zinc-400">No athletes found for &quot;{query}&quot;</p>
+              <p className="text-zinc-400">No athletes found for &quot;{submittedQuery}&quot;</p>
             </div>
           )}
           <div className="space-y-3">
@@ -205,8 +219,10 @@ function UserCard({
 }) {
   return (
     <div className="flex items-center gap-4 rounded-2xl border border-white/8 bg-[#0f1117] p-4 hover:border-white/15 transition-colors">
-      <Avatar name={user.displayName} src={user.profileImageDataUrl} size={48} />
-      <div className="min-w-0 flex-1">
+      <Link href={`/dashboard/users/${user.id}`} className="shrink-0">
+        <Avatar name={user.displayName} src={user.profileImageDataUrl} size={48} />
+      </Link>
+      <Link href={`/dashboard/users/${user.id}`} className="min-w-0 flex-1 hover:opacity-80 transition-opacity">
         <p className="font-bold text-white truncate">{user.displayName}</p>
         <p className="text-xs text-zinc-500 truncate">
           {user.username ? `@${user.username}` : ""}
@@ -215,7 +231,7 @@ function UserCard({
           {(user.username || user.preferredCategory) && user.experienceLevel ? " · " : ""}
           {user.experienceLevel || ""}
         </p>
-      </div>
+      </Link>
       <button
         onClick={onFollow}
         className={`shrink-0 rounded-xl px-4 py-2 text-sm font-bold transition-all ${

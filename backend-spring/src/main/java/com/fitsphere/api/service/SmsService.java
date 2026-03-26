@@ -7,21 +7,14 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
-
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
+import org.springframework.web.util.UriComponentsBuilder;
 
 /**
- * SMS sender via Twilio REST API (no SDK dependency required).
+ * SMS sender via Fast2SMS REST API.
  *
- * Configure in application.yml (or environment variables):
- *   twilio:
- *     account-sid: ACxxxxxxxxxx
- *     auth-token: xxxxxxxx
- *     phone-number: +15555550100
+ * Configure in environment variables:
+ *   FAST2SMS_API_KEY=your_api_key
  *
  * When not configured → dev mode: OTP is logged to console and returned in the API response.
  */
@@ -29,18 +22,13 @@ import java.util.Base64;
 public class SmsService {
 
     private static final Logger log = LoggerFactory.getLogger(SmsService.class);
+    private static final String FAST2SMS_URL = "https://www.fast2sms.com/dev/bulkV2";
 
-    @Value("${twilio.account-sid:}")
-    private String accountSid;
-
-    @Value("${twilio.auth-token:}")
-    private String authToken;
-
-    @Value("${twilio.phone-number:}")
-    private String fromPhone;
+    @Value("${fast2sms.api-key:}")
+    private String apiKey;
 
     public boolean isConfigured() {
-        return !accountSid.isBlank() && !authToken.isBlank() && !fromPhone.isBlank();
+        return !apiKey.isBlank();
     }
 
     public void send(String to, String message) {
@@ -49,22 +37,22 @@ public class SmsService {
             return;
         }
         try {
-            RestTemplate rt = new RestTemplate();
-            String url = "https://api.twilio.com/2010-04-01/Accounts/" + accountSid + "/Messages.json";
+            // Strip country code — Fast2SMS expects 10-digit Indian numbers
+            String number = to.startsWith("+91") ? to.substring(3) : to;
 
-            String credentials = accountSid + ":" + authToken;
-            String encoded = Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
+            RestTemplate rt = new RestTemplate();
 
             HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-            headers.set("Authorization", "Basic " + encoded);
+            headers.set("authorization", apiKey);
+            headers.setContentType(MediaType.APPLICATION_JSON);
 
-            MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
-            params.add("To", to);
-            params.add("From", fromPhone);
-            params.add("Body", message);
+            String url = UriComponentsBuilder.fromUriString(FAST2SMS_URL)
+                    .queryParam("route", "q")
+                    .queryParam("message", message)
+                    .queryParam("numbers", number)
+                    .toUriString();
 
-            rt.postForObject(url, new HttpEntity<>(params, headers), String.class);
+            rt.postForObject(url, new HttpEntity<>(headers), String.class);
             log.info("[SMS] sent to {}", to);
         } catch (Exception e) {
             log.error("[SMS] failed to send to {}: {}", to, e.getMessage());

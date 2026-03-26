@@ -73,6 +73,13 @@ public class AuthDtos {
     // ── Google OAuth ──────────────────────────────────────────────────────────
     public record GoogleAuthRequest(@NotBlank String idToken) {}
 
+    // ── Google new-user username setup ────────────────────────────────────────
+    public record SetupUsernameRequest(
+        @NotBlank @Size(min = 3, max = 30)
+        @Pattern(regexp = "[a-z0-9._]+", message = "Username may only contain lowercase letters, numbers, dots, underscores")
+        String username
+    ) {}
+
     // ── Shared responses ──────────────────────────────────────────────────────
     public record ForgotPasswordRequest(
         @Email @NotBlank String email
@@ -142,6 +149,8 @@ public class AuthDtos {
         String coverImageDataUrl,
         int weeklyWorkoutCount,
         int weeklyRunKm,
-        int weeklyCaloriesBurned
+        int weeklyCaloriesBurned,
+        long followerCount,
+        long followingCount
     ) {}
 }
