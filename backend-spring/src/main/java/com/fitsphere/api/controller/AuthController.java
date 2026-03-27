@@ -76,7 +76,7 @@ public class AuthController {
     @PostMapping("/google")
     public ResponseEntity<AuthDtos.AuthResponse> googleAuth(
             @Valid @RequestBody AuthDtos.GoogleAuthRequest request) {
-        return ResponseEntity.ok(authService.googleAuth(request.idToken()));
+        return ResponseEntity.ok(authService.googleAuth(request.idToken(), request.flow()));
     }
 
     // ── Google new-user username setup ────────────────────────────────────────
@@ -86,8 +86,16 @@ public class AuthController {
             @AuthenticationPrincipal String subject,
             @Valid @RequestBody AuthDtos.SetupUsernameRequest request) {
         UUID userId = resolveUserId(subject);
-        authService.setupUsername(userId, request.username());
+        authService.setupUsername(userId, request.username(), request.age());
         return ResponseEntity.ok(new AuthDtos.BasicResponse("Username set successfully"));
+    }
+
+    @PostMapping("/complete-account")
+    public ResponseEntity<AuthDtos.UserProfileResponse> completeAccount(
+            @AuthenticationPrincipal String subject,
+            @Valid @RequestBody AuthDtos.CompleteAccountRequest request) {
+        UUID userId = resolveUserId(subject);
+        return ResponseEntity.ok(authService.completeAccount(userId, request));
     }
 
     // ── Password reset ────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -59,6 +60,8 @@ public class AuthDtos {
 
         @NotBlank String displayName,
 
+        @NotNull @Min(10) @Max(100) Integer age,
+
         @Size(min = 8, max = 72) String password,
 
         @NotBlank String phone,   // must have passed verify-phone-otp first
@@ -71,13 +74,22 @@ public class AuthDtos {
     public record CheckUsernameResponse(boolean available) {}
 
     // ── Google OAuth ──────────────────────────────────────────────────────────
-    public record GoogleAuthRequest(@NotBlank String idToken) {}
+    public record GoogleAuthRequest(
+        @NotBlank String idToken,
+        @NotBlank String flow // "signin" | "signup"
+    ) {}
 
     // ── Google new-user username setup ────────────────────────────────────────
     public record SetupUsernameRequest(
         @NotBlank @Size(min = 3, max = 30)
         @Pattern(regexp = "[a-z0-9._]+", message = "Username may only contain lowercase letters, numbers, dots, underscores")
-        String username
+        String username,
+        @NotNull @Min(10) @Max(100) Integer age
+    ) {}
+
+    public record CompleteAccountRequest(
+        String username,
+        @Email String email
     ) {}
 
     // ── Shared responses ──────────────────────────────────────────────────────
@@ -139,6 +151,7 @@ public class AuthDtos {
         String phoneNumber,
         double heightCm,
         double weightKg,
+        Integer age,
         String fitnessGoal,
         String experienceLevel,
         String preferredCategory,

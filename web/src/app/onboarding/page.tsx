@@ -6,6 +6,26 @@ import Image from "next/image";
 import { Logo } from "@/components/logo";
 import { API_BASE_URL } from "@/lib/api";
 
+type MeProfile = {
+  username?: string | null;
+  email?: string | null;
+  displayName?: string | null;
+  heightCm?: number;
+  weightKg?: number;
+  fitnessGoal?: string | null;
+  experienceLevel?: string | null;
+  preferredCategory?: string | null;
+  trainingDaysPerWeek?: number;
+  sessionDurationMinutes?: number;
+};
+
+function splitCsv(value: string | null | undefined): string[] {
+  return (value || "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
 const STEPS = [
   { id: 1, label: "Body Stats" },
   { id: 2, label: "Your Goals" },
@@ -16,37 +36,23 @@ const LEFT_CONTENT = [
   {
     heading: <>Build Your<br />Athlete<br />Profile</>,
     sub: "Tell us about your body so we can calibrate your training zones and nutrition targets.",
-    tag: "Step 1 of 3 — Body Stats",
+    tag: "Step 1 of 3 - Body Stats",
   },
   {
     heading: <>Define What<br />You&apos;re<br />Training For</>,
-    sub: "Whether it's shredding fat, building mass or running faster — we align every session to your goal.",
-    tag: "Step 2 of 3 — Goals",
+    sub: "Whether it's shredding fat, building mass, or running faster - we align every session to your goal.",
+    tag: "Step 2 of 3 - Goals",
   },
   {
     heading: <>Design Your<br />Perfect<br />Schedule</>,
     sub: "Your AI coach crafts a weekly plan tailored to how many days you can commit and how long you train.",
-    tag: "Step 3 of 3 — Training Style",
+    tag: "Step 3 of 3 - Training Style",
   },
 ];
 
-const FITNESS_GOALS = [
-  { value: "Fat loss", emoji: "🔥" },
-  { value: "Muscle gain", emoji: "💪" },
-  { value: "Strength", emoji: "🏋️" },
-  { value: "Endurance", emoji: "🏃" },
-  { value: "Flexibility", emoji: "🧘" },
-  { value: "General fitness", emoji: "⚡" },
-];
+const FITNESS_GOALS = ["Fat loss", "Muscle gain", "Strength", "Endurance", "Flexibility", "General fitness"];
 
-const CATEGORIES = [
-  { value: "Gym", emoji: "🏋️" },
-  { value: "Running", emoji: "🏃" },
-  { value: "Calisthenics", emoji: "🤸" },
-  { value: "Cycling", emoji: "🚴" },
-  { value: "Swimming", emoji: "🏊" },
-  { value: "Sports", emoji: "⚽" },
-];
+const CATEGORIES = ["Gym", "Running", "Calisthenics", "Cycling", "Swimming", "Sports"];
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -54,12 +60,16 @@ export default function OnboardingPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [displayName, setDisplayName] = useState("Athlete");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [needsUsername, setNeedsUsername] = useState(false);
+  const [needsEmail, setNeedsEmail] = useState(false);
 
   // Body stats
   const [heightCm, setHeightCm] = useState("");
   const [weightKg, setWeightKg] = useState("");
 
-  // Goals — multi-select
+  // Goals  multi-select
   const [fitnessGoals, setFitnessGoals] = useState<string[]>([]);
   const [experienceLevel, setExperienceLevel] = useState("");
   const [preferredCategories, setPreferredCategories] = useState<string[]>([]);
@@ -72,15 +82,51 @@ export default function OnboardingPage() {
   useEffect(() => {
     const token = localStorage.getItem("fitsphere_token");
     if (!token) { router.replace("/auth?mode=login"); return; }
-
-    // Skip onboarding if already completed
-    if (localStorage.getItem("fitsphere_onboarding_done")) {
-      router.replace("/dashboard");
-      return;
-    }
-
     const name = localStorage.getItem("fitsphere_display_name");
     if (name) setDisplayName(name.split(" ")[0]);
+
+    fetch(`${API_BASE_URL}/api/auth/me`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data) return;
+        const me = data as MeProfile;
+
+        const missingUsername = !me.username || !me.username.trim();
+        const missingEmail = !me.email || !me.email.trim();
+        setNeedsUsername(missingUsername);
+        setNeedsEmail(missingEmail);
+
+        if (!missingUsername && me.username) setUsername(me.username);
+        if (!missingEmail && me.email) setEmail(me.email);
+        if (me.displayName && me.displayName.trim()) setDisplayName(me.displayName.split(" ")[0]);
+
+        if (typeof me.heightCm === "number" && me.heightCm > 0) setHeightCm(String(me.heightCm));
+        if (typeof me.weightKg === "number" && me.weightKg > 0) setWeightKg(String(me.weightKg));
+        if (me.fitnessGoal) setFitnessGoals(splitCsv(me.fitnessGoal));
+        if (me.experienceLevel) setExperienceLevel(me.experienceLevel);
+        if (me.preferredCategory) setPreferredCategories(splitCsv(me.preferredCategory));
+        if (typeof me.trainingDaysPerWeek === "number" && me.trainingDaysPerWeek > 0) setTrainingDays(String(me.trainingDaysPerWeek));
+        if (typeof me.sessionDurationMinutes === "number" && me.sessionDurationMinutes > 0) setSessionDuration(String(me.sessionDurationMinutes));
+
+        const hasOnboarding =
+          (me.heightCm ?? 0) > 0 &&
+          (me.weightKg ?? 0) > 0 &&
+          !!me.fitnessGoal?.trim() &&
+          !!me.experienceLevel?.trim() &&
+          !!me.preferredCategory?.trim() &&
+          (me.trainingDaysPerWeek ?? 0) > 0 &&
+          (me.sessionDurationMinutes ?? 0) > 0;
+
+        if (localStorage.getItem("fitsphere_onboarding_done") && !missingUsername && !missingEmail && hasOnboarding) {
+          router.replace("/dashboard");
+        }
+      })
+      .catch(() => null);
   }, [router]);
 
   function toggleGoal(val: string) {
@@ -100,8 +146,20 @@ export default function OnboardingPage() {
 
   const validate = (): string | null => {
     if (step === 0) {
-      if (!heightCm || Number(heightCm) < 100 || Number(heightCm) > 260) return "Enter a valid height (100–260 cm).";
-      if (!weightKg || Number(weightKg) < 30 || Number(weightKg) > 300) return "Enter a valid weight (30–300 kg).";
+      if (needsUsername) {
+        const uname = username.trim().toLowerCase();
+        if (!uname || uname.length < 3 || uname.length > 30 || !/^[a-z0-9._]+$/.test(uname)) {
+          return "Enter a valid username (3-30 chars, lowercase letters, numbers, dots, underscores).";
+        }
+      }
+      if (needsEmail) {
+        const emailTrimmed = email.trim();
+        if (!emailTrimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) {
+          return "Enter a valid email address.";
+        }
+      }
+      if (!heightCm || Number(heightCm) < 100 || Number(heightCm) > 260) return "Enter a valid height (100-260 cm).";
+      if (!weightKg || Number(weightKg) < 30 || Number(weightKg) > 300) return "Enter a valid weight (30-300 kg).";
     }
     if (step === 1) {
       if (fitnessGoals.length === 0) return "Select at least one fitness goal.";
@@ -142,6 +200,59 @@ export default function OnboardingPage() {
     };
 
     try {
+      const meRes = await fetch(`${API_BASE_URL}/api/auth/me`, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!meRes.ok) throw new Error("Could not verify account basics");
+      const me = (await meRes.json()) as MeProfile;
+
+      const mustSetUsername = !me.username || !me.username.trim();
+      const mustSetEmail = !me.email || !me.email.trim();
+      setNeedsUsername(mustSetUsername);
+      setNeedsEmail(mustSetEmail);
+
+      if (mustSetUsername || mustSetEmail) {
+        const uname = username.trim().toLowerCase();
+        const emailTrimmed = email.trim().toLowerCase();
+
+        if (mustSetUsername && (!uname || uname.length < 3 || uname.length > 30 || !/^[a-z0-9._]+$/.test(uname))) {
+          setStep(0);
+          throw new Error("Username is required before continuing.");
+        }
+        if (mustSetEmail && (!emailTrimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed))) {
+          setStep(0);
+          throw new Error("Email is required before continuing.");
+        }
+
+        const basicsPayload: { username?: string; email?: string } = {};
+        if (mustSetUsername) basicsPayload.username = uname;
+        if (mustSetEmail) basicsPayload.email = emailTrimmed;
+
+        const completeRes = await fetch(`${API_BASE_URL}/api/auth/complete-account`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(basicsPayload),
+        });
+        if (!completeRes.ok && completeRes.status !== 404) {
+          throw new Error(await completeRes.text());
+        }
+
+        if (completeRes.ok) {
+          const updatedBasics = (await completeRes.json()) as MeProfile;
+          if (updatedBasics.username) localStorage.setItem("fitsphere_username", updatedBasics.username);
+        } else if (mustSetUsername && uname) {
+          // Backend may be on an older build without /complete-account.
+          // Cache entered username locally so UI can still display it.
+          localStorage.setItem("fitsphere_username", uname);
+        }
+      }
+
       const response = await fetch(`${API_BASE_URL}/api/auth/onboarding`, {
         method: "POST",
         headers: {
@@ -154,11 +265,22 @@ export default function OnboardingPage() {
 
       // Mark onboarding as done so login skips this page
       localStorage.setItem("fitsphere_onboarding_done", "true");
+      let existingAge: number | undefined;
+      try {
+        const existingProfileRaw = localStorage.getItem("fitsphere_profile_data");
+        if (existingProfileRaw) {
+          const existingProfile = JSON.parse(existingProfileRaw) as { age?: number };
+          existingAge = existingProfile.age;
+        }
+      } catch {
+        existingAge = undefined;
+      }
       localStorage.setItem(
         "fitsphere_profile_data",
         JSON.stringify({
           heightCm: payload.heightCm,
           weightKg: payload.weightKg,
+          age: existingAge,
         }),
       );
       router.push("/dashboard");
@@ -187,7 +309,7 @@ export default function OnboardingPage() {
   return (
     <main className="min-h-screen flex">
 
-      {/* ── Left Panel ── */}
+      {/*  Left Panel  */}
       <div className="relative hidden lg:flex lg:w-[45%] xl:w-1/2 flex-col justify-between overflow-hidden">
         <Image
           src="/images/hero-fallback-5.jpg"
@@ -241,7 +363,7 @@ export default function OnboardingPage() {
         </div>
       </div>
 
-      {/* ── Right Panel ── */}
+      {/*  Right Panel  */}
       <div className="flex-1 flex flex-col justify-center items-center bg-[#0a0c12] px-6 py-10 lg:px-12 xl:px-16 overflow-y-auto">
 
         <div className="lg:hidden mb-8 self-start">
@@ -261,7 +383,7 @@ export default function OnboardingPage() {
             </h1>
             <p className="text-zinc-400 text-sm mt-1.5">
               {step === 0 && "We use this to calculate your BMI and training intensity."}
-              {step === 1 && "Pick everything that applies — you can edit this anytime in your profile."}
+              {step === 1 && "Pick everything that applies - you can edit this anytime in your profile."}
               {step === 2 && "How often and how long do you want to train?"}
             </p>
           </div>
@@ -275,18 +397,48 @@ export default function OnboardingPage() {
 
           <form onSubmit={onSubmit} className="space-y-5">
 
-            {/* ── Step 0: Body Stats ── */}
+            {/*  Step 0: Body Stats  */}
             {step === 0 && (
               <>
+                {(needsUsername || needsEmail) && (
+                  <div className="space-y-4">
+                    {needsUsername && (
+                      <div>
+                        <label className={labelCls}>Username</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. amit_singh"
+                          value={username}
+                          onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, ""))}
+                          className={inputCls}
+                        />
+                      </div>
+                    )}
+                    {needsEmail && (
+                      <div>
+                        <label className={labelCls}>Email</label>
+                        <input
+                          type="email"
+                          placeholder="you@example.com"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          className={inputCls}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className={labelCls}>Height</label>
                     <div className="relative">
                       <input
-                        type="number" step="0.1" min="100" max="260"
+                        type="text"
+                        inputMode="decimal"
                         placeholder="e.g. 175"
                         value={heightCm}
-                        onChange={(e) => setHeightCm(e.target.value)}
+                        onChange={(e) => setHeightCm(e.target.value.replace(/[^0-9.]/g, ""))}
                         className={inputCls}
                       />
                       <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-zinc-500">cm</span>
@@ -296,10 +448,11 @@ export default function OnboardingPage() {
                     <label className={labelCls}>Weight</label>
                     <div className="relative">
                       <input
-                        type="number" step="0.1" min="30" max="300"
+                        type="text"
+                        inputMode="decimal"
                         placeholder="e.g. 75"
                         value={weightKg}
-                        onChange={(e) => setWeightKg(e.target.value)}
+                        onChange={(e) => setWeightKg(e.target.value.replace(/[^0-9.]/g, ""))}
                         className={inputCls}
                       />
                       <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-zinc-500">kg</span>
@@ -316,7 +469,7 @@ export default function OnboardingPage() {
               </>
             )}
 
-            {/* ── Step 1: Goals (multi-select) ── */}
+            {/*  Step 1: Goals (multi-select)  */}
             {step === 1 && (
               <>
                 <div>
@@ -325,11 +478,11 @@ export default function OnboardingPage() {
                     <span className="normal-case text-zinc-500 font-normal tracking-normal">(select all that apply)</span>
                   </label>
                   <div className="grid grid-cols-2 gap-2.5">
-                    {FITNESS_GOALS.map(({ value, emoji }) => (
+                    {FITNESS_GOALS.map((value) => (
                       <button key={value} type="button" onClick={() => toggleGoal(value)} className={chipBtn(fitnessGoals.includes(value))}>
-                        {emoji} {value}
+                        {value}
                         {fitnessGoals.includes(value) && (
-                          <span className="ml-auto float-right text-orange-400 text-xs">✓</span>
+                          <span className="ml-auto float-right text-orange-400 text-xs">Selected</span>
                         )}
                       </button>
                     ))}
@@ -359,10 +512,10 @@ export default function OnboardingPage() {
                     <span className="normal-case text-zinc-500 font-normal tracking-normal">(select all that apply)</span>
                   </label>
                   <div className="grid grid-cols-3 gap-2.5">
-                    {CATEGORIES.map(({ value, emoji }) => (
+                    {CATEGORIES.map((value) => (
                       <button key={value} type="button" onClick={() => toggleCategory(value)}
                         className={chipBtn(preferredCategories.includes(value))}>
-                        {emoji} {value}
+                        {value}
                       </button>
                     ))}
                   </div>
@@ -375,7 +528,7 @@ export default function OnboardingPage() {
               </>
             )}
 
-            {/* ── Step 2: Training Style ── */}
+            {/*  Step 2: Training Style  */}
             {step === 2 && (
               <>
                 <div>
@@ -399,10 +552,11 @@ export default function OnboardingPage() {
                   <label className={labelCls}>Session Duration</label>
                   <div className="relative">
                     <input
-                      type="number" min="10" max="360"
+                      type="text"
+                      inputMode="numeric"
                       placeholder="e.g. 60"
                       value={sessionDuration}
-                      onChange={(e) => setSessionDuration(e.target.value)}
+                      onChange={(e) => setSessionDuration(e.target.value.replace(/\D/g, ""))}
                       className={inputCls}
                     />
                     <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-zinc-500">min</span>
@@ -437,12 +591,12 @@ export default function OnboardingPage() {
               {step > 0 && (
                 <button type="button" onClick={prevStep}
                   className="flex-1 rounded-xl border border-white/15 bg-transparent py-3.5 text-sm font-bold text-white hover:border-white/30 hover:bg-white/5 transition">
-                  ← Back
+                  Back
                 </button>
               )}
               <button type="submit" disabled={loading}
                 className="flex-1 rounded-xl bg-orange-500 hover:bg-orange-400 py-3.5 text-sm font-bold uppercase tracking-widest text-white transition disabled:opacity-50">
-                {loading ? "Saving..." : step < STEPS.length - 1 ? "Continue →" : "Complete Setup"}
+                {loading ? "Saving..." : step < STEPS.length - 1 ? "Continue" : "Complete Setup"}
               </button>
             </div>
           </form>
@@ -451,3 +605,4 @@ export default function OnboardingPage() {
     </main>
   );
 }
+

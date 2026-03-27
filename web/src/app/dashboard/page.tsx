@@ -779,7 +779,7 @@ function PostCard({ post, onLike }: { post: Post; onLike: (id: string) => void }
 }
 
 export default function DashboardPage() {
-  const [profile, setProfile] = useState<Profile | null>(() => getInitialProfileFromStorage());
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [tab, setTab] = useState<"feed" | "blog">("feed");
   const [social, setSocial] = useState({ followers: 0, following: 0 });
@@ -791,6 +791,13 @@ export default function DashboardPage() {
   const [composeType, setComposeType] = useState<"activity" | "blog">("activity");
   const [draft, setDraft] = useState({ title: "", content: "" });
   const [scanState, setScanState] = useState<"idle" | "scanning" | "done">("idle");
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setProfile((prev) => prev ?? getInitialProfileFromStorage());
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, []);
 
   const initials = useMemo(
     () =>

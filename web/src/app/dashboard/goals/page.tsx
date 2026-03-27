@@ -13,14 +13,13 @@ import {
 } from "recharts";
 import { API_BASE_URL } from "@/lib/api";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+//  Types 
 
 type GoalType = "lose_fat" | "gain_muscle" | "maintain";
 type ActivityLevel = "sedentary" | "lightly_active" | "moderately_active" | "very_active" | "extremely_active";
 
 interface GoalSettings {
   goal: GoalType;
-  age: number;
   activityLevel: ActivityLevel;
   calorieTarget: number;
   protein: number;
@@ -45,10 +44,11 @@ interface FoodLogs {
 interface ProfileData {
   heightCm?: number;
   weightKg?: number;
+  age?: number;
   gender?: string;
 }
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+//  Constants 
 
 const ACTIVITY_MULTIPLIERS: Record<ActivityLevel, number> = {
   sedentary: 1.2,
@@ -68,9 +68,9 @@ const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
 
 const ACTIVITY_DESCRIPTIONS: Record<ActivityLevel, string> = {
   sedentary: "Little or no exercise",
-  lightly_active: "Light exercise 1–3 days/week",
-  moderately_active: "Moderate exercise 3–5 days/week",
-  very_active: "Hard exercise 6–7 days/week",
+  lightly_active: "Light exercise 13 days/week",
+  moderately_active: "Moderate exercise 35 days/week",
+  very_active: "Hard exercise 67 days/week",
   extremely_active: "Very hard exercise, physical job",
 };
 
@@ -96,7 +96,7 @@ const MACRO_COLORS = {
 const TODAY = new Date().toISOString().split("T")[0];
 const PROFILE_STORAGE_KEY = "fitsphere_profile_data";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+//  Helpers 
 
 function getLast7Days(): string[] {
   const days: string[] = [];
@@ -171,7 +171,7 @@ function saveProfileToStorage(profile: ProfileData) {
   localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
 }
 
-// ── SVG Progress Ring ─────────────────────────────────────────────────────────
+//  SVG Progress Ring 
 
 function ProgressRing({
   label,
@@ -234,7 +234,7 @@ function ProgressRing({
   );
 }
 
-// ── Goal Card ─────────────────────────────────────────────────────────────────
+//  Goal Card 
 
 function GoalCard({
   type,
@@ -287,7 +287,7 @@ function GoalCard({
   );
 }
 
-// ── Custom Tooltip for Bar Chart ──────────────────────────────────────────────
+//  Custom Tooltip for Bar Chart 
 
 function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number }>; label?: string }) {
   if (!active || !payload || !payload.length) return null;
@@ -299,7 +299,7 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+//  Main Page 
 
 export default function GoalsPage() {
   const [displayName, setDisplayName] = useState("Athlete");
@@ -307,7 +307,6 @@ export default function GoalsPage() {
 
   // Goal settings state
   const [selectedGoal, setSelectedGoal] = useState<GoalType>("maintain");
-  const [age, setAge] = useState(25);
   const [activityLevel, setActivityLevel] = useState<ActivityLevel>("moderately_active");
   const [calorieTarget, setCalorieTarget] = useState(2000);
   const [macroTargets, setMacroTargets] = useState({ protein: 120, carbs: 200, fat: 65 });
@@ -332,6 +331,7 @@ export default function GoalsPage() {
     setProfile({
       heightCm: profileData.heightCm ?? 175,
       weightKg: profileData.weightKg ?? 75,
+      age: typeof profileData.age === "number" && Number.isFinite(profileData.age) ? profileData.age : undefined,
       gender: profileData.gender,
     });
 
@@ -357,6 +357,10 @@ export default function GoalsPage() {
                 typeof apiProfile.weightKg === "number" && Number.isFinite(apiProfile.weightKg)
                   ? apiProfile.weightKg
                   : prev.weightKg,
+              age:
+                typeof apiProfile.age === "number" && Number.isFinite(apiProfile.age)
+                  ? apiProfile.age
+                  : prev.age,
               gender: apiProfile.gender ?? prev.gender,
             };
             saveProfileToStorage(next);
@@ -371,6 +375,7 @@ export default function GoalsPage() {
         displayName?: string;
         heightCm?: number;
         weightKg?: number;
+        age?: number;
         gender?: string;
       }>).detail;
       if (!detail) return;
@@ -382,12 +387,14 @@ export default function GoalsPage() {
       if (
         typeof detail.heightCm === "number" ||
         typeof detail.weightKg === "number" ||
+        typeof detail.age === "number" ||
         typeof detail.gender === "string"
       ) {
         setProfile((prev) => {
           const next: ProfileData = {
             heightCm: typeof detail.heightCm === "number" ? detail.heightCm : prev.heightCm,
             weightKg: typeof detail.weightKg === "number" ? detail.weightKg : prev.weightKg,
+            age: typeof detail.age === "number" ? detail.age : prev.age,
             gender: typeof detail.gender === "string" ? detail.gender : prev.gender,
           };
           saveProfileToStorage(next);
@@ -400,7 +407,6 @@ export default function GoalsPage() {
     const savedGoals = loadGoalSettings();
     if (savedGoals) {
       setSelectedGoal(savedGoals.goal);
-      setAge(savedGoals.age);
       setActivityLevel(savedGoals.activityLevel);
       setCalorieTarget(savedGoals.calorieTarget);
       setMacroTargets({ protein: savedGoals.protein, carbs: savedGoals.carbs, fat: savedGoals.fat });
@@ -414,17 +420,18 @@ export default function GoalsPage() {
     };
   }, []);
 
-  // Recalculate targets whenever goal/age/activity changes (after initial load)
+  // Recalculate targets whenever goal/profile/activity changes (after initial load)
   const recalculate = useCallback(() => {
     const wKg = profile.weightKg ?? 75;
     const hCm = profile.heightCm ?? 175;
+    const age = profile.age ?? 25;
     const gender = profile.gender ?? "male";
     const tdee = calcTDEE(wKg, hCm, age, activityLevel, gender);
     const adjusted = Math.max(1200, tdee + GOAL_ADJUSTMENTS[selectedGoal]);
     const macros = calcMacros(adjusted, wKg, selectedGoal);
     setCalorieTarget(adjusted);
     setMacroTargets(macros);
-  }, [profile, age, activityLevel, selectedGoal]);
+  }, [profile, activityLevel, selectedGoal]);
 
   useEffect(() => {
     if (!settingsLoaded) return;
@@ -436,7 +443,6 @@ export default function GoalsPage() {
   const handleSaveSettings = () => {
     const settings: GoalSettings = {
       goal: selectedGoal,
-      age,
       activityLevel,
       calorieTarget,
       protein: macroTargets.protein,
@@ -527,7 +533,7 @@ export default function GoalsPage() {
     <div className="min-h-screen bg-[#0a0c12] pb-16">
       <div className="mx-auto max-w-5xl px-4 pt-8">
 
-        {/* ── Page Header ── */}
+        {/*  Page Header  */}
         <div className="mb-8">
           <p className="text-xs font-bold uppercase tracking-[0.15em] text-orange-400 mb-1">Nutrition & Goals</p>
           <h1 className="text-2xl font-black text-white">
@@ -538,7 +544,7 @@ export default function GoalsPage() {
 
         <div className="space-y-6">
 
-          {/* ── Section 1: Goal Card ── */}
+          {/*  Section 1: Goal Card  */}
           <section className="rounded-2xl border border-white/8 bg-[#0f1117] p-6">
             <div className="mb-5 flex items-center justify-between">
               <div>
@@ -619,21 +625,8 @@ export default function GoalsPage() {
               />
             </div>
 
-            {/* Age & Activity level */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-widest text-zinc-500">
-                  Age
-                </label>
-                <input
-                  type="number"
-                  min={10}
-                  max={100}
-                  value={age}
-                  onChange={(e) => setAge(Math.max(10, Math.min(100, parseInt(e.target.value) || 25)))}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-orange-500/40 transition-colors"
-                />
-              </div>
+            {/* Activity level */}
+            <div className="grid grid-cols-1 gap-4">
               <div>
                 <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-widest text-zinc-500">
                   Activity Level
@@ -645,7 +638,7 @@ export default function GoalsPage() {
                 >
                   {(Object.keys(ACTIVITY_LABELS) as ActivityLevel[]).map((key) => (
                     <option key={key} value={key}>
-                      {ACTIVITY_LABELS[key]} — {ACTIVITY_DESCRIPTIONS[key]}
+                      {ACTIVITY_LABELS[key]}  {ACTIVITY_DESCRIPTIONS[key]}
                     </option>
                   ))}
                 </select>
@@ -674,12 +667,12 @@ export default function GoalsPage() {
                 </div>
               </div>
               <p className="mt-3 text-[10px] text-zinc-600">
-                Based on {weightKg}kg body weight, {profile.heightCm ?? 175}cm height, age {age}, {ACTIVITY_LABELS[activityLevel].toLowerCase()} lifestyle. Formula: Mifflin-St Jeor.
+                Based on {weightKg}kg body weight, {profile.heightCm ?? 175}cm height, age {profile.age ?? 25}, {ACTIVITY_LABELS[activityLevel].toLowerCase()} lifestyle. Formula: Mifflin-St Jeor.
               </p>
             </div>
           </section>
 
-          {/* ── Section 2: Today's Progress ── */}
+          {/*  Section 2: Today's Progress  */}
           <section className="rounded-2xl border border-white/8 bg-[#0f1117] p-6">
             <div className="mb-6">
               <h2 className="text-base font-bold text-white">Today&apos;s Progress</h2>
@@ -790,7 +783,7 @@ export default function GoalsPage() {
             </div>
           </section>
 
-          {/* ── Section 3: Food Log ── */}
+          {/*  Section 3: Food Log  */}
           <section className="rounded-2xl border border-white/8 bg-[#0f1117] p-6">
             <div className="mb-5 flex items-center justify-between">
               <div>
@@ -806,7 +799,7 @@ export default function GoalsPage() {
                     onFocus={handleAiDetectEnter}
                     onBlur={handleAiDetectLeave}
                     className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-zinc-400 hover:text-zinc-200 transition-colors cursor-default"
-                    aria-label="AI Detect — Coming soon"
+                    aria-label="AI Detect  Coming soon"
                   >
                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
@@ -818,7 +811,7 @@ export default function GoalsPage() {
                     <div className="absolute right-0 top-full mt-2 z-30 whitespace-nowrap rounded-xl border border-white/10 bg-[#12141c] px-3 py-2 text-xs text-zinc-400 shadow-xl">
                       <div className="flex items-center gap-2">
                         <span className="h-1.5 w-1.5 rounded-full bg-orange-400 animate-pulse" />
-                        Coming soon — AI food photo detection
+                        Coming soon  AI food photo detection
                       </div>
                     </div>
                   )}
@@ -980,7 +973,7 @@ export default function GoalsPage() {
             )}
           </section>
 
-          {/* ── Section 4: Weekly Overview ── */}
+          {/*  Section 4: Weekly Overview  */}
           <section className="rounded-2xl border border-white/8 bg-[#0f1117] p-6">
             <div className="mb-6">
               <h2 className="text-base font-bold text-white">Weekly Overview</h2>
@@ -1068,3 +1061,4 @@ export default function GoalsPage() {
     </div>
   );
 }
+

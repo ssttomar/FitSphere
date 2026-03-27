@@ -418,6 +418,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notifCount, setNotifCount] = useState(0);
+  const searchNavTimerRef = useRef<number | null>(null);
   const dropRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
 
@@ -448,6 +449,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       window.clearTimeout(t);
       window.removeEventListener("storage", syncFromStorage);
       window.removeEventListener("fitsphere:profile-updated", handleProfileUpdated);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Keep navbar search in sync with /dashboard/search?q=...
+    if (pathname.startsWith("/dashboard/search")) {
+      const id = window.setTimeout(() => {
+        const q = new URLSearchParams(window.location.search).get("q") || "";
+        setSearchQuery(q);
+      }, 0);
+      return () => window.clearTimeout(id);
+    }
+  }, [pathname]);
+
+  useEffect(() => {
+    return () => {
+      if (searchNavTimerRef.current) {
+        window.clearTimeout(searchNavTimerRef.current);
+      }
     };
   }, []);
 
@@ -515,10 +535,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setSearchQuery(next);
+
+                  if (searchNavTimerRef.current) window.clearTimeout(searchNavTimerRef.current);
+                  searchNavTimerRef.current = window.setTimeout(() => {
+                    const trimmed = next.trim();
+                    if (trimmed) {
+                      router.replace(`/dashboard/search?q=${encodeURIComponent(trimmed)}`);
+                    } else if (pathname.startsWith("/dashboard/search")) {
+                      router.replace("/dashboard/search");
+                    }
+                  }, 220);
+                }}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && searchQuery.trim()) {
-                    router.push(`/dashboard/search?q=${encodeURIComponent(searchQuery.trim())}`);
+                  if (e.key === "Enter") {
+                    if (searchNavTimerRef.current) window.clearTimeout(searchNavTimerRef.current);
+                    const trimmed = searchQuery.trim();
+                    if (trimmed) {
+                      router.replace(`/dashboard/search?q=${encodeURIComponent(trimmed)}`);
+                    } else if (pathname.startsWith("/dashboard/search")) {
+                      router.replace("/dashboard/search");
+                    }
                   }
                 }}
                 placeholder="Search athletes, workouts..."

@@ -48,6 +48,7 @@ public class FitnessUser {
 
     private Double heightCm;
     private Double weightKg;
+    private Integer age;
     private String fitnessGoal;
     private String experienceLevel;
     private String preferredCategory;
@@ -92,6 +93,8 @@ public class FitnessUser {
     public void setHeightCm(Double heightCm) { this.heightCm = heightCm; }
     public Double getWeightKg() { return weightKg; }
     public void setWeightKg(Double weightKg) { this.weightKg = weightKg; }
+    public Integer getAge() { return age; }
+    public void setAge(Integer age) { this.age = age; }
     public String getFitnessGoal() { return fitnessGoal; }
     public void setFitnessGoal(String fitnessGoal) { this.fitnessGoal = fitnessGoal; }
     public String getExperienceLevel() { return experienceLevel; }

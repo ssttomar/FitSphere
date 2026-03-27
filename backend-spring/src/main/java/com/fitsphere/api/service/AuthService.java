@@ -192,6 +192,7 @@ public class AuthService {
         user.setPhoneNumber(phone);
         user.setPhoneVerified(true);
         user.setPasswordHash(passwordEncoder.encode(request.password()));
+        user.setAge(request.age());
         user.setPreferredCategory("Gym");
         user.setFitnessGoal("Strength");
         user.setExperienceLevel("Beginner");
@@ -209,8 +210,12 @@ public class AuthService {
 
     // ── Google OAuth ──────────────────────────────────────────────────────────
 
-    public AuthDtos.AuthResponse googleAuth(String idToken) {
+    public AuthDtos.AuthResponse googleAuth(String idToken, String flow) {
         Map<String, Object> payload = verifyGoogleToken(idToken);
+        String normalizedFlow = flow == null ? "" : flow.trim().toLowerCase();
+        if (!normalizedFlow.equals("signin") && !normalizedFlow.equals("signup")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid Google auth flow");
+        }
 
         String googleId = (String) payload.get("sub");
         String email = (String) payload.get("email");
@@ -228,6 +233,9 @@ public class AuthService {
 
         boolean isNewUser = false;
         if (user == null) {
+            if (normalizedFlow.equals("signin")) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No account found. Please sign up first.");
+            }
             // New user via Google
             user = new FitnessUser();
             user.setGoogleId(googleId);
@@ -246,6 +254,9 @@ public class AuthService {
             user = userRepository.save(user);
             isNewUser = true;
         } else {
+            if (normalizedFlow.equals("signup")) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Account already exists. Please sign in.");
+            }
             // Link googleId to existing account if not already linked
             if (user.getGoogleId() == null) {
                 user.setGoogleId(googleId);
@@ -363,7 +374,7 @@ public class AuthService {
         return toProfile(userRepository.save(user));
     }
 
-    public void setupUsername(UUID userId, String username) {
+    public void setupUsername(UUID userId, String username, Integer age) {
         String uname = username.trim().toLowerCase();
         if (!uname.matches("[a-z0-9._]+") || uname.length() < 3) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid username");
@@ -377,7 +388,41 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Username already set");
         }
         user.setUsername(uname);
+        user.setAge(age);
         userRepository.save(user);
+    }
+
+    public AuthDtos.UserProfileResponse completeAccount(UUID userId, AuthDtos.CompleteAccountRequest request) {
+        FitnessUser user = userRepository.findById(userId)
+            .orElseThrow(() -> new EntityNotFoundException("User not found"));
+
+        boolean missingUsername = user.getUsername() == null || user.getUsername().isBlank();
+        boolean missingEmail = user.getEmail() == null || user.getEmail().isBlank();
+
+        if (missingUsername) {
+            String uname = request.username() == null ? "" : request.username().trim().toLowerCase();
+            if (!uname.matches("[a-z0-9._]+") || uname.length() < 3 || uname.length() > 30) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A valid username is required");
+            }
+            if (userRepository.existsByUsername(uname)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Username already taken");
+            }
+            user.setUsername(uname);
+        }
+
+        if (missingEmail) {
+            String email = request.email() == null ? "" : request.email().trim().toLowerCase();
+            if (email.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email is required");
+            }
+            if (userRepository.existsByEmail(email)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already in use");
+            }
+            user.setEmail(email);
+            user.setEmailVerified(true);
+        }
+
+        return toProfile(userRepository.save(user));
     }
 
     public AuthDtos.UserProfileResponse getProfile(UUID userId) {
@@ -428,6 +473,7 @@ public class AuthService {
             user.getPhoneNumber(),
             user.getHeightCm() == null ? 0 : user.getHeightCm(),
             user.getWeightKg() == null ? 0 : user.getWeightKg(),
+            user.getAge(),
             user.getFitnessGoal(),
             user.getExperienceLevel(),
             user.getPreferredCategory(),

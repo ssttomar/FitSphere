@@ -125,6 +125,7 @@ type Profile = {
   experienceLevel: string;
   heightCm: number;
   weightKg: number;
+  age?: number;
   trainingDaysPerWeek: number;
   sessionDurationMinutes: number;
   notes: string;
@@ -272,6 +273,7 @@ export default function ProfilePage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveLoading, setSaveLoading] = useState(false);
   const [fallbackName, setFallbackName] = useState("Athlete");
+  const [fallbackUsername, setFallbackUsername] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [myPosts, setMyPosts] = useState<StoredPost[]>([]);
   const [followListOpen, setFollowListOpen] = useState<"followers" | "following" | null>(null);
@@ -295,7 +297,9 @@ export default function ProfilePage() {
     }
 
     const storedName = localStorage.getItem("fitsphere_display_name") || "Athlete";
+    const storedUsername = localStorage.getItem("fitsphere_username") || "";
     window.setTimeout(() => setFallbackName(storedName), 0);
+    window.setTimeout(() => setFallbackUsername(storedUsername), 0);
 
     fetch(`${API_BASE_URL}/api/auth/me`, {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -306,6 +310,10 @@ export default function ProfilePage() {
       })
       .then((data) => {
         const loaded = data as Profile;
+        const cachedUsername = localStorage.getItem("fitsphere_username") || "";
+        if (!loaded.username && cachedUsername) {
+          loaded.username = cachedUsername;
+        }
         // Merge images from localStorage if the DB record has none (e.g. after a logout cleared them)
         if (!loaded.profileImageDataUrl) {
           const cached = localStorage.getItem("fitsphere_profile_image");
@@ -316,7 +324,10 @@ export default function ProfilePage() {
           if (cached) loaded.coverImageDataUrl = cached;
         }
         setProfile(loaded);
-        if (loaded.username) localStorage.setItem("fitsphere_username", loaded.username);
+        if (loaded.username) {
+          localStorage.setItem("fitsphere_username", loaded.username);
+          setFallbackUsername(loaded.username);
+        }
         if (loaded.profileImageDataUrl) localStorage.setItem("fitsphere_profile_image", loaded.profileImageDataUrl);
         if (loaded.coverImageDataUrl) localStorage.setItem("fitsphere_cover_image", loaded.coverImageDataUrl);
         localStorage.setItem(
@@ -324,6 +335,7 @@ export default function ProfilePage() {
           JSON.stringify({
             heightCm: loaded.heightCm,
             weightKg: loaded.weightKg,
+            age: loaded.age,
           }),
         );
         setLoadError(null);
@@ -516,6 +528,10 @@ export default function ProfilePage() {
 
       setProfile(updated);
       localStorage.setItem("fitsphere_display_name", updated.displayName || "Athlete");
+      if (updated.username) {
+        localStorage.setItem("fitsphere_username", updated.username);
+        setFallbackUsername(updated.username);
+      }
       if (updated.profileImageDataUrl) {
         localStorage.setItem("fitsphere_profile_image", updated.profileImageDataUrl);
       } else {
@@ -531,6 +547,7 @@ export default function ProfilePage() {
         JSON.stringify({
           heightCm: updated.heightCm,
           weightKg: updated.weightKg,
+          age: updated.age,
         }),
       );
       // Notify layout in the same tab (storage events don't fire for same-tab writes)
@@ -540,6 +557,7 @@ export default function ProfilePage() {
           profileImage: updated.profileImageDataUrl || null,
           heightCm: updated.heightCm,
           weightKg: updated.weightKg,
+          age: updated.age,
         },
       }));
       setFallbackName(updated.displayName || "Athlete");
@@ -934,7 +952,7 @@ export default function ProfilePage() {
               </label>
               <label className="text-sm text-zinc-300">
                 Username (read only)
-                <input value={profile?.username ? `@${profile.username}` : ""} readOnly className="mt-1 w-full rounded-lg border border-white/12 bg-white/10 px-3 py-2 text-zinc-400" />
+                <input value={(profile?.username || fallbackUsername) ? `@${profile?.username || fallbackUsername}` : ""} readOnly className="mt-1 w-full rounded-lg border border-white/12 bg-white/10 px-3 py-2 text-zinc-400" />
               </label>
               <label className="text-sm text-zinc-300">
                 Email (read only)

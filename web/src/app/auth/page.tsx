@@ -7,7 +7,7 @@ import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { API_BASE_URL, ApiError } from "@/lib/api";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+//  Types 
 
 type Mode = "login" | "signup";
 type SignupStep = "method" | "phone" | "phone-otp" | "details" | "email" | "email-otp" | "google-setup";
@@ -24,6 +24,7 @@ type AuthResponse = {
 type RegisterRequestBody = {
   username: string;
   displayName: string;
+  age: number;
   password: string;
   phone: string;
   email?: string;
@@ -48,39 +49,39 @@ declare global {
 }
 
 const COUNTRY_CODES = [
-  { dial: "+91", flag: "🇮🇳", name: "India" },
-  { dial: "+1",  flag: "🇺🇸", name: "United States" },
-  { dial: "+44", flag: "🇬🇧", name: "United Kingdom" },
-  { dial: "+61", flag: "🇦🇺", name: "Australia" },
-  { dial: "+1",  flag: "🇨🇦", name: "Canada" },
-  { dial: "+971",flag: "🇦🇪", name: "UAE" },
-  { dial: "+65", flag: "🇸🇬", name: "Singapore" },
-  { dial: "+49", flag: "🇩🇪", name: "Germany" },
-  { dial: "+33", flag: "🇫🇷", name: "France" },
-  { dial: "+86", flag: "🇨🇳", name: "China" },
-  { dial: "+81", flag: "🇯🇵", name: "Japan" },
-  { dial: "+82", flag: "🇰🇷", name: "South Korea" },
-  { dial: "+55", flag: "🇧🇷", name: "Brazil" },
-  { dial: "+7",  flag: "🇷🇺", name: "Russia" },
-  { dial: "+92", flag: "🇵🇰", name: "Pakistan" },
-  { dial: "+880",flag: "🇧🇩", name: "Bangladesh" },
-  { dial: "+234",flag: "🇳🇬", name: "Nigeria" },
-  { dial: "+27", flag: "🇿🇦", name: "South Africa" },
-  { dial: "+966",flag: "🇸🇦", name: "Saudi Arabia" },
-  { dial: "+62", flag: "🇮🇩", name: "Indonesia" },
-  { dial: "+60", flag: "🇲🇾", name: "Malaysia" },
-  { dial: "+66", flag: "🇹🇭", name: "Thailand" },
-  { dial: "+63", flag: "🇵🇭", name: "Philippines" },
-  { dial: "+64", flag: "🇳🇿", name: "New Zealand" },
-  { dial: "+41", flag: "🇨🇭", name: "Switzerland" },
-  { dial: "+31", flag: "🇳🇱", name: "Netherlands" },
-  { dial: "+46", flag: "🇸🇪", name: "Sweden" },
-  { dial: "+34", flag: "🇪🇸", name: "Spain" },
-  { dial: "+39", flag: "🇮🇹", name: "Italy" },
-  { dial: "+20", flag: "🇪🇬", name: "Egypt" },
+  { dial: "+91", flag: "IN", name: "India" },
+  { dial: "+1", flag: "US", name: "United States" },
+  { dial: "+44", flag: "UK", name: "United Kingdom" },
+  { dial: "+61", flag: "AU", name: "Australia" },
+  { dial: "+1", flag: "CA", name: "Canada" },
+  { dial: "+971", flag: "AE", name: "UAE" },
+  { dial: "+65", flag: "SG", name: "Singapore" },
+  { dial: "+49", flag: "DE", name: "Germany" },
+  { dial: "+33", flag: "FR", name: "France" },
+  { dial: "+86", flag: "CN", name: "China" },
+  { dial: "+81", flag: "JP", name: "Japan" },
+  { dial: "+82", flag: "KR", name: "South Korea" },
+  { dial: "+55", flag: "BR", name: "Brazil" },
+  { dial: "+7", flag: "RU", name: "Russia" },
+  { dial: "+92", flag: "PK", name: "Pakistan" },
+  { dial: "+880", flag: "BD", name: "Bangladesh" },
+  { dial: "+234", flag: "NG", name: "Nigeria" },
+  { dial: "+27", flag: "ZA", name: "South Africa" },
+  { dial: "+966", flag: "SA", name: "Saudi Arabia" },
+  { dial: "+62", flag: "ID", name: "Indonesia" },
+  { dial: "+60", flag: "MY", name: "Malaysia" },
+  { dial: "+66", flag: "TH", name: "Thailand" },
+  { dial: "+63", flag: "PH", name: "Philippines" },
+  { dial: "+64", flag: "NZ", name: "New Zealand" },
+  { dial: "+41", flag: "CH", name: "Switzerland" },
+  { dial: "+31", flag: "NL", name: "Netherlands" },
+  { dial: "+46", flag: "SE", name: "Sweden" },
+  { dial: "+34", flag: "ES", name: "Spain" },
+  { dial: "+39", flag: "IT", name: "Italy" },
+  { dial: "+20", flag: "EG", name: "Egypt" },
 ];
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+//  Helpers 
 
 function decodeGoogleJwt(token: string): { name?: string; email?: string; picture?: string } {
   try {
@@ -115,7 +116,17 @@ function saveAuth(resp: { userId: string; token: string; displayName: string }) 
   localStorage.setItem("fitsphere_display_name", resp.displayName);
 }
 
-// ── OTP Input (6 boxes) ───────────────────────────────────────────────────────
+function saveAgeToProfileStorage(age: number) {
+  try {
+    const raw = localStorage.getItem("fitsphere_profile_data");
+    const current = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    localStorage.setItem("fitsphere_profile_data", JSON.stringify({ ...current, age }));
+  } catch {
+    localStorage.setItem("fitsphere_profile_data", JSON.stringify({ age }));
+  }
+}
+
+//  OTP Input (6 boxes) 
 
 function OtpInput({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
   const refs = useRef<Array<HTMLInputElement | null>>([]);
@@ -163,21 +174,21 @@ function OtpInput({ value, onChange }: { value: string[]; onChange: (v: string[]
   );
 }
 
-// ── Dev OTP badge ─────────────────────────────────────────────────────────────
+//  Dev OTP badge 
 
 function DevOtpBadge({ otp }: { otp: string }) {
   return (
     <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
-      <span className="text-amber-400">🔧</span>
+      <span className="text-amber-400">OTP</span>
       <div>
-        <p className="text-xs font-bold text-amber-300">Dev mode — SMS not configured</p>
+        <p className="text-xs font-bold text-amber-300">Dev mode - SMS not configured</p>
         <p className="text-sm font-mono text-amber-200 tracking-[0.3em] mt-0.5">{otp}</p>
       </div>
     </div>
   );
 }
 
-// ── Google button ─────────────────────────────────────────────────────────────
+//  Google button 
 
 function GoogleButton({ onClick, loading }: { onClick: () => void; loading: boolean }) {
   return (
@@ -198,7 +209,7 @@ function GoogleButton({ onClick, loading }: { onClick: () => void; loading: bool
   );
 }
 
-// ── Signup Flow ───────────────────────────────────────────────────────────────
+//  Signup Flow 
 
 function SignupFlow({ onDone, onSwitchToLogin }: {
   onDone: (isNew: boolean) => void;
@@ -213,6 +224,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
   const [username, setUsername] = useState("");
   const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
   const [displayName, setDisplayName] = useState("");
+  const [ageInput, setAgeInput] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
@@ -227,6 +239,8 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
   const [googlePicture, setGooglePicture] = useState("");
 
   const fullPhone = countryCode.dial + phoneLocal.replace(/\D/g, "");
+  const parsedAge = Number.parseInt(ageInput, 10);
+  const isAgeValid = Number.isInteger(parsedAge) && parsedAge >= 10 && parsedAge <= 100;
 
   const handleGoogleCredential = useCallback(async (response: GoogleCredentialResponse) => {
     setGoogleLoading(true);
@@ -234,7 +248,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
     try {
       const res = await apiFetch<AuthResponse>("/api/auth/google", {
         method: "POST",
-        body: JSON.stringify({ idToken: response.credential }),
+        body: JSON.stringify({ idToken: response.credential, flow: "signup" }),
       });
       saveAuth(res);
       if (res.isNewUser) {
@@ -250,11 +264,15 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
         onDone(false);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Google sign-in failed");
+      if (e instanceof ApiError && e.status === 409) {
+        onSwitchToLogin();
+      } else {
+        setError(e instanceof Error ? e.message : "Google sign-up failed");
+      }
     } finally {
       setGoogleLoading(false);
     }
-  }, [onDone]);
+  }, [onDone, onSwitchToLogin]);
 
   // Load Google Identity Services
   useEffect(() => {
@@ -367,12 +385,14 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
 
   const handleRegister = async (withEmail = false) => {
     if (!displayName.trim()) { setError("Enter your full name"); return; }
+    if (!isAgeValid) { setError("Enter a valid age between 10 and 100"); return; }
     if (username.length < 3 || usernameStatus === "taken") { setError("Choose a valid available username"); return; }
     if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
 
     const body: RegisterRequestBody = {
       username,
       displayName: displayName.trim(),
+      age: parsedAge,
       password,
       phone: fullPhone,
     };
@@ -388,6 +408,8 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
         body: JSON.stringify(body),
       });
       saveAuth(res);
+      localStorage.setItem("fitsphere_username", username);
+      saveAgeToProfileStorage(parsedAge);
       onDone(true);
     } catch (e) { setError(e instanceof Error ? e.message : "Registration failed"); }
     finally { setLoading(false); }
@@ -395,16 +417,18 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
 
   const handleGoogleSetup = async () => {
     if (username.length < 3 || usernameStatus === "taken") { setError("Choose a valid available username"); return; }
+    if (!isAgeValid) { setError("Enter a valid age between 10 and 100"); return; }
     const token = localStorage.getItem("fitsphere_token");
     if (!token) { setError("Session expired, please try again"); return; }
     setLoading(true); setError(null);
     try {
       await apiFetch("/api/auth/setup-username", {
         method: "POST",
-        body: JSON.stringify({ username }),
+        body: JSON.stringify({ username, age: parsedAge }),
         headers: { Authorization: `Bearer ${token}` },
       });
       localStorage.setItem("fitsphere_username", username);
+      saveAgeToProfileStorage(parsedAge);
       onDone(true);
     } catch (e) { setError(e instanceof Error ? e.message : "Failed to set username"); }
     finally { setLoading(false); }
@@ -459,7 +483,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
         </button>
       )}
 
-      {/* ── Step: method ── */}
+      {/*  Step: method  */}
       {step === "method" && (
         <>
           <div className="mb-8">
@@ -498,7 +522,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
         </>
       )}
 
-      {/* ── Step: phone ── */}
+      {/*  Step: phone  */}
       {step === "phone" && (
         <>
           <div className="mb-8">
@@ -546,13 +570,13 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
               disabled={loading}
               className="w-full rounded-xl bg-orange-500 hover:bg-orange-400 px-5 py-3.5 text-sm font-bold text-white transition-colors disabled:opacity-50"
             >
-              {loading ? "Sending..." : "Send verification code →"}
+              {loading ? "Sending..." : "Send verification code"}
             </button>
           </div>
         </>
       )}
 
-      {/* ── Step: phone-otp ── */}
+      {/*  Step: phone-otp  */}
       {step === "phone-otp" && (
         <>
           <div className="mb-8">
@@ -574,7 +598,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
               disabled={loading || phoneOtp.join("").length < 6}
               className="w-full rounded-xl bg-orange-500 hover:bg-orange-400 px-5 py-3.5 text-sm font-bold text-white transition-colors disabled:opacity-50"
             >
-              {loading ? "Verifying..." : "Verify →"}
+              {loading ? "Verifying..." : "Verify"}
             </button>
 
             <div className="text-center">
@@ -593,7 +617,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
         </>
       )}
 
-      {/* ── Step: details ── */}
+      {/*  Step: details  */}
       {step === "details" && (
         <>
           <div className="mb-7">
@@ -670,26 +694,38 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
               </div>
             </div>
 
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-zinc-500">Age</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={ageInput}
+                onChange={(e) => setAgeInput(e.target.value.replace(/\D/g, "").slice(0, 3))}
+                className="w-full rounded-xl border border-white/12 bg-white/6 px-4 py-3 text-white placeholder-zinc-500 outline-none focus:border-orange-500/50 transition-colors"
+              />
+            </div>
+
             {error && <p className="text-sm text-red-400">{error}</p>}
 
             <button
               onClick={() => setStep("email")}
-              disabled={loading || usernameStatus !== "available" || !displayName.trim() || password.length < 8}
+              disabled={loading || usernameStatus !== "available" || !displayName.trim() || password.length < 8 || !isAgeValid}
               className="w-full rounded-xl bg-orange-500 hover:bg-orange-400 px-5 py-3.5 text-sm font-bold text-white transition-colors disabled:opacity-50"
             >
-              Continue →
+              Continue
             </button>
           </div>
         </>
       )}
 
-      {/* ── Step: email (optional) ── */}
+      {/*  Step: email (optional)  */}
       {step === "email" && (
         <>
           <div className="mb-7">
             <h1 className="text-2xl font-black text-white">Add your email</h1>
             <p className="text-zinc-400 text-sm mt-2">
-              Optional — use it to recover your account and get updates.
+              Optional - use it to recover your account and get updates.
             </p>
           </div>
 
@@ -713,7 +749,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
               disabled={loading}
               className="w-full rounded-xl bg-orange-500 hover:bg-orange-400 px-5 py-3.5 text-sm font-bold text-white transition-colors disabled:opacity-50"
             >
-              {loading ? "Sending..." : "Add email & verify →"}
+              {loading ? "Sending..." : "Add email and verify"}
             </button>
 
             <button
@@ -727,7 +763,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
         </>
       )}
 
-      {/* ── Step: email-otp ── */}
+      {/*  Step: email-otp  */}
       {step === "email-otp" && (
         <>
           <div className="mb-8">
@@ -749,13 +785,13 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
               disabled={loading || emailOtp.join("").length < 6}
               className="w-full rounded-xl bg-orange-500 hover:bg-orange-400 px-5 py-3.5 text-sm font-bold text-white transition-colors disabled:opacity-50"
             >
-              {loading ? "Creating account..." : "Verify & create account →"}
+              {loading ? "Creating account..." : "Verify and create account"}
             </button>
           </div>
         </>
       )}
 
-      {/* ── Step: google-setup ── */}
+      {/*  Step: google-setup  */}
       {step === "google-setup" && (
         <>
           <div className="mb-6">
@@ -777,7 +813,16 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
                 <p className="text-sm font-semibold text-white">{googleName}</p>
                 <p className="text-xs text-zinc-500">{googleEmail}</p>
               </div>
-              <span className="ml-auto text-xs text-emerald-400 font-semibold">✓ Google</span>
+              <span className="ml-auto text-xs text-emerald-400 font-semibold">Google linked</span>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-1.5">Email</label>
+              <input
+                value={googleEmail}
+                readOnly
+                className="w-full rounded-xl border border-white/12 bg-white/6 px-4 py-2.5 text-sm text-zinc-300 outline-none"
+              />
             </div>
 
             {/* Username */}
@@ -798,15 +843,27 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-500">...</span>
                 )}
                 {usernameStatus === "available" && (
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-emerald-400">✓</span>
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-emerald-400">OK</span>
                 )}
                 {usernameStatus === "taken" && (
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-red-400">✗</span>
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-red-400">NO</span>
                 )}
               </div>
               {usernameStatus === "taken" && (
-                <p className="mt-1 text-xs text-red-400">Username taken — try another</p>
+                <p className="mt-1 text-xs text-red-400">Username taken - try another</p>
               )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-1.5">Age</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={ageInput}
+                onChange={(e) => setAgeInput(e.target.value.replace(/\D/g, "").slice(0, 3))}
+                className="w-full rounded-xl border border-white/12 bg-white/6 px-4 py-2.5 text-sm text-white outline-none focus:border-orange-500/60"
+              />
             </div>
 
             {error && (
@@ -817,15 +874,11 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
 
             <button
               onClick={handleGoogleSetup}
-              disabled={loading || usernameStatus === "taken" || usernameStatus === "checking" || username.length < 3}
+              disabled={loading || usernameStatus === "taken" || usernameStatus === "checking" || username.length < 3 || !isAgeValid}
               className="w-full rounded-xl bg-orange-500 hover:bg-orange-400 px-5 py-3.5 text-sm font-bold text-white transition-colors disabled:opacity-50"
             >
-              {loading ? "Setting up..." : "Continue →"}
+              {loading ? "Setting up..." : "Continue"}
             </button>
-
-            <p className="text-center text-xs text-zinc-600">
-              You&apos;ll set up your fitness profile in the next step.
-            </p>
           </div>
         </>
       )}
@@ -842,7 +895,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
   );
 }
 
-// ── Login Form ────────────────────────────────────────────────────────────────
+//  Login Form 
 
 function LoginForm({ onDone, onSwitchToSignup }: {
   onDone: () => void;
@@ -864,14 +917,18 @@ function LoginForm({ onDone, onSwitchToSignup }: {
     try {
       const res = await apiFetch<AuthResponse>("/api/auth/google", {
         method: "POST",
-        body: JSON.stringify({ idToken: response.credential }),
+        body: JSON.stringify({ idToken: response.credential, flow: "signin" }),
       });
       saveAuth(res);
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Google sign-in failed");
+      if (e instanceof ApiError && e.status === 404) {
+        onSwitchToSignup();
+      } else {
+        setError(e instanceof Error ? e.message : "Google sign-in failed");
+      }
     } finally { setGoogleLoading(false); }
-  }, [onDone]);
+  }, [onDone, onSwitchToSignup]);
 
   // Load Google Identity Services
   useEffect(() => {
@@ -967,7 +1024,7 @@ function LoginForm({ onDone, onSwitchToSignup }: {
               type={showPassword ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder="********"
               onKeyDown={(e) => e.key === "Enter" && handleLogin()}
               className="w-full rounded-xl border border-white/12 bg-white/6 px-4 py-3 pr-16 text-white placeholder-zinc-500 outline-none focus:border-orange-500/50 transition-colors"
             />
@@ -1025,7 +1082,7 @@ function LoginForm({ onDone, onSwitchToSignup }: {
           disabled={loading}
           className="w-full rounded-xl bg-orange-500 hover:bg-orange-400 px-5 py-3.5 text-sm font-bold text-white transition-colors disabled:opacity-50 mt-1"
         >
-          {loading ? "Signing in..." : "Sign in →"}
+          {loading ? "Signing in..." : "Sign in"}
         </button>
       </div>
 
@@ -1039,7 +1096,7 @@ function LoginForm({ onDone, onSwitchToSignup }: {
   );
 }
 
-// ── Main Auth Page ────────────────────────────────────────────────────────────
+//  Main Auth Page 
 
 export default function AuthPage() {
   const router = useRouter();
@@ -1050,13 +1107,64 @@ export default function AuthPage() {
 
   const [mode, setMode] = useState<Mode>(initialMode);
 
-  const handleDone = (isNewUser: boolean) => {
-    if (isNewUser) {
-      localStorage.removeItem("fitsphere_onboarding_done");
-      router.push("/onboarding");
-    } else {
+  const handleDone = async (isNewUser: boolean) => {
+    const token = localStorage.getItem("fitsphere_token");
+    if (!token) {
+      router.push("/auth?mode=login");
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!res.ok) throw new Error("Failed to load profile");
+
+      const me = (await res.json()) as {
+        username?: string | null;
+        email?: string | null;
+        heightCm?: number;
+        weightKg?: number;
+        fitnessGoal?: string | null;
+        experienceLevel?: string | null;
+        preferredCategory?: string | null;
+        trainingDaysPerWeek?: number;
+        sessionDurationMinutes?: number;
+      };
+
+      const missingUsername = !me.username || !me.username.trim();
+      const missingEmail = !me.email || !me.email.trim();
+      const missingOnboarding =
+        (me.heightCm ?? 0) <= 0 ||
+        (me.weightKg ?? 0) <= 0 ||
+        !me.fitnessGoal?.trim() ||
+        !me.experienceLevel?.trim() ||
+        !me.preferredCategory?.trim() ||
+        (me.trainingDaysPerWeek ?? 0) <= 0 ||
+        (me.sessionDurationMinutes ?? 0) <= 0;
+
+      if (isNewUser || missingUsername || missingEmail || missingOnboarding) {
+        localStorage.removeItem("fitsphere_onboarding_done");
+        router.push("/onboarding");
+        return;
+      }
+
+      if (me.username && me.username.trim()) {
+        localStorage.setItem("fitsphere_username", me.username.trim());
+      }
       localStorage.setItem("fitsphere_onboarding_done", "true");
       router.push("/dashboard");
+    } catch {
+      if (isNewUser) {
+        localStorage.removeItem("fitsphere_onboarding_done");
+        router.push("/onboarding");
+      } else {
+        localStorage.setItem("fitsphere_onboarding_done", "true");
+        router.push("/dashboard");
+      }
     }
   };
 
@@ -1068,7 +1176,7 @@ export default function AuthPage() {
 
   return (
     <main className="min-h-screen flex">
-      {/* Left panel — hero image */}
+      {/* Left panel  hero image */}
       <div className="relative hidden lg:flex lg:w-1/2 xl:w-[55%] flex-col justify-between overflow-hidden">
         <Image src={heroImage} alt="" fill className="object-cover object-center transition-all duration-700" priority />
         <div className="absolute inset-0 bg-gradient-to-br from-black/70 via-black/40 to-black/20" />
@@ -1097,7 +1205,7 @@ export default function AuthPage() {
         </div>
       </div>
 
-      {/* Right panel — form */}
+      {/* Right panel  form */}
       <div className="flex-1 flex flex-col justify-center items-center bg-[#0a0c12] px-6 py-10 lg:px-12 xl:px-16 overflow-y-auto">
         <div className="lg:hidden flex items-center gap-2 mb-10">
           <Logo size={36} />
@@ -1133,3 +1241,4 @@ export default function AuthPage() {
     </main>
   );
 }
+
