@@ -32,6 +32,46 @@ type Profile = {
   followingCount?: number;
 };
 
+function getInitialProfileFromStorage(): Profile | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const cached = localStorage.getItem("fitsphere_cached_profile");
+    if (cached) {
+      const cp = JSON.parse(cached) as Profile;
+      return {
+        ...cp,
+        profileImageDataUrl: localStorage.getItem("fitsphere_profile_image") || cp.profileImageDataUrl || null,
+        coverImageDataUrl: localStorage.getItem("fitsphere_cover_image") || cp.coverImageDataUrl || null,
+      };
+    }
+
+    const storedName = localStorage.getItem("fitsphere_display_name");
+    if (!storedName) return null;
+
+    const storedImg = localStorage.getItem("fitsphere_profile_image");
+    const storedCover = localStorage.getItem("fitsphere_cover_image");
+    const storedData = JSON.parse(localStorage.getItem("fitsphere_profile_data") || "{}");
+    return {
+      userId: storedData.userId || "",
+      displayName: storedName,
+      email: storedData.email || "",
+      fitnessGoal: storedData.fitnessGoal || "Build performance",
+      preferredCategory: storedData.preferredCategory || "General fitness",
+      experienceLevel: storedData.experienceLevel || "",
+      heightCm: storedData.heightCm || 0,
+      weightKg: storedData.weightKg || 0,
+      trainingDaysPerWeek: storedData.trainingDaysPerWeek || 3,
+      weeklyWorkoutCount: 0,
+      weeklyRunKm: 0,
+      weeklyCaloriesBurned: 0,
+      profileImageDataUrl: storedImg || null,
+      coverImageDataUrl: storedCover || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 type PostMedia = {
   id: string;
   label: string;
@@ -739,7 +779,7 @@ function PostCard({ post, onLike }: { post: Post; onLike: (id: string) => void }
 }
 
 export default function DashboardPage() {
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(() => getInitialProfileFromStorage());
   const [posts, setPosts] = useState<Post[]>([]);
   const [tab, setTab] = useState<"feed" | "blog">("feed");
   const [social, setSocial] = useState({ followers: 0, following: 0 });
@@ -892,40 +932,6 @@ export default function DashboardPage() {
       window.location.href = "/auth?mode=login";
       return;
     }
-
-    // Load profile immediately: try full cache first, then fall back to individual keys
-    try {
-      const cached = localStorage.getItem("fitsphere_cached_profile");
-      if (cached) {
-        const cp = JSON.parse(cached) as Profile;
-        cp.profileImageDataUrl = localStorage.getItem("fitsphere_profile_image") || cp.profileImageDataUrl;
-        cp.coverImageDataUrl = localStorage.getItem("fitsphere_cover_image") || cp.coverImageDataUrl;
-        setProfile(cp);
-      } else {
-        // First load after fix — build a minimal profile from individual keys
-        const storedName = localStorage.getItem("fitsphere_display_name");
-        const storedImg = localStorage.getItem("fitsphere_profile_image");
-        const storedCover = localStorage.getItem("fitsphere_cover_image");
-        const storedData = JSON.parse(localStorage.getItem("fitsphere_profile_data") || "{}");
-        if (storedName) {
-          setProfile({
-            displayName: storedName,
-            email: "",
-            fitnessGoal: storedData.fitnessGoal || "Build performance",
-            preferredCategory: storedData.preferredCategory || "General fitness",
-            experienceLevel: storedData.experienceLevel || "",
-            heightCm: storedData.heightCm || 0,
-            weightKg: storedData.weightKg || 0,
-            trainingDaysPerWeek: storedData.trainingDaysPerWeek || 3,
-            weeklyWorkoutCount: 0,
-            weeklyRunKm: 0,
-            weeklyCaloriesBurned: 0,
-            profileImageDataUrl: storedImg || null,
-            coverImageDataUrl: storedCover || null,
-          });
-        }
-      }
-    } catch { /* ignore */ }
 
     fetch(`${API_BASE_URL}/api/auth/me`, {
       headers: {
@@ -1320,3 +1326,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+
