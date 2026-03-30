@@ -18,6 +18,7 @@ type PublicProfile = {
   followerCount: number;
   followingCount: number;
   isFollowing: boolean;
+  followState?: "none" | "requested" | "following";
   isSelf: boolean;
 };
 
@@ -85,17 +86,40 @@ export default function UserProfilePage() {
   const toggleFollow = async () => {
     if (!profile || followLoading) return;
     setFollowLoading(true);
-    const method = profile.isFollowing ? "DELETE" : "POST";
+    const currentState = profile.followState || (profile.isFollowing ? "following" : "none");
+    const isActive = currentState === "following" || currentState === "requested";
+    const method = isActive ? "DELETE" : "POST";
     try {
       const res = await fetch(`${API_BASE_URL}/api/users/${userId}/follow`, {
         method,
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
-        const data = await res.json();
-        setProfile((p) => p ? { ...p, isFollowing: data.isFollowing, followerCount: data.followerCount } : p);
-        if (!profile.isFollowing) {
-          addNotification({ type: "follow", message: `You are now following ${profile.displayName}` });
+        const data = await res.json() as {
+          isFollowing?: boolean;
+          followState?: "none" | "requested" | "following";
+          followerCount?: number;
+        };
+        const nextFollowState = data.followState || "none";
+        const nextIsFollowing = typeof data.isFollowing === "boolean"
+          ? data.isFollowing
+          : nextFollowState === "following";
+
+        setProfile((p) => p
+          ? {
+              ...p,
+              isFollowing: nextIsFollowing,
+              followState: nextFollowState,
+              followerCount: typeof data.followerCount === "number" ? data.followerCount : p.followerCount,
+            }
+          : p);
+
+        if (!isActive) {
+          if (nextFollowState === "requested") {
+            addNotification({ type: "follow", message: `Follow request sent to ${profile.displayName}` });
+          } else if (nextFollowState === "following") {
+            addNotification({ type: "follow", message: `You are now following ${profile.displayName}` });
+          }
         }
       }
     } finally {
@@ -153,12 +177,14 @@ export default function UserProfilePage() {
               onClick={toggleFollow}
               disabled={followLoading}
               className={`shrink-0 rounded-xl px-5 py-2 text-sm font-bold transition-all disabled:opacity-60 ${
-                profile.isFollowing
+                (profile.followState === "following" || profile.isFollowing)
                   ? "border border-white/15 bg-white/5 text-zinc-300 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30"
+                  : profile.followState === "requested"
+                  ? "border border-orange-500/30 bg-orange-500/10 text-orange-400 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30"
                   : "bg-orange-500 text-white hover:bg-orange-400"
               }`}
             >
-              {followLoading ? "..." : profile.isFollowing ? "Following" : "Follow"}
+              {followLoading ? "..." : profile.followState === "requested" ? "Requested" : profile.isFollowing ? "Following" : "Follow"}
             </button>
           )}
         </div>

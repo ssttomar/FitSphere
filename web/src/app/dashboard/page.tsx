@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { API_BASE_URL } from "@/lib/api";
-import { addNotification } from "@/lib/notifications";
 import {
   PolarAngleAxis,
   PolarGrid,
@@ -645,9 +644,32 @@ function SuggestedAthlete({ athlete }: { athlete: (typeof SUGGESTED)[number] }) 
   );
 }
 
+type BackendComment = {
+  id: string;
+  author: string;
+  initials: string;
+  profileImage?: string | null;
+  content: string;
+  time: string;
+  createdAt: string;
+  parentCommentId?: string | null;
+  likeCount: number;
+  liked: boolean;
+  replyCount: number;
+};
+
 function PostCard({ post, onLike }: { post: Post; onLike: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const [burst, setBurst] = useState(false);
+  const [showComments, setShowComments] = useState(false);
+  const [commentText, setCommentText] = useState("");
+  const [comments, setComments] = useState<BackendComment[]>([]);
+  const [commentsLoaded, setCommentsLoaded] = useState(false);
+  const [commentCount, setCommentCount] = useState(post.comments);
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [submittingReplyFor, setSubmittingReplyFor] = useState<string | null>(null);
 
   const isLong = post.content.length > 170;
   const shown = expanded || !isLong ? post.content : `${post.content.slice(0, 170)}...`;
@@ -656,6 +678,213 @@ function PostCard({ post, onLike }: { post: Post; onLike: (id: string) => void }
     onLike(post.id);
     setBurst(true);
     window.setTimeout(() => setBurst(false), 440);
+  };
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(post.id);
+
+  const commentsSorted = useMemo(() => {
+    return [...comments].sort((a, b) => {
+      const at = new Date(a.createdAt || 0).getTime();
+      const bt = new Date(b.createdAt || 0).getTime();
+      return at - bt;
+    });
+  }, [comments]);
+
+  const rootComments = useMemo(
+    () => commentsSorted.filter((c) => !c.parentCommentId),
+    [commentsSorted],
+  );
+
+  const repliesByParent = useMemo(() => {
+    const map: Record<string, BackendComment[]> = {};
+    for (const c of commentsSorted) {
+      if (!c.parentCommentId) continue;
+      if (!map[c.parentCommentId]) map[c.parentCommentId] = [];
+      map[c.parentCommentId].push(c);
+    }
+    return map;
+  }, [commentsSorted]);
+
+  const toggleComments = () => {
+    const next = !showComments;
+    setShowComments(next);
+    if (next && !commentsLoaded && isUuid) {
+      const token = localStorage.getItem("fitsphere_token");
+      fetch(`${API_BASE_URL}/api/posts/${post.id}/comments`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && Array.isArray(data)) setComments(data as BackendComment[]);
+          setCommentsLoaded(true);
+        })
+        .catch(() => setCommentsLoaded(true));
+    }
+  };
+
+  const submitComment = async () => {
+    const text = commentText.trim();
+    if (!text || submittingComment) return;
+    const token = localStorage.getItem("fitsphere_token");
+    if (!token || !isUuid) return;
+    setSubmittingComment(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/posts/${post.id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ content: text }),
+      });
+      if (res.ok) {
+        const newComment = await res.json() as BackendComment;
+        setComments((prev) => [...prev, newComment]);
+        setCommentCount((c) => c + 1);
+        setCommentText("");
+      }
+    } catch { /* ignore */ } finally {
+      setSubmittingComment(false);
+    }
+  };
+
+  const toggleCommentLike = async (commentId: string) => {
+    if (!isUuid) return;
+    const token = localStorage.getItem("fitsphere_token");
+    if (!token) return;
+
+    const current = comments.find((c) => c.id === commentId);
+    if (!current) return;
+
+    const nextLiked = !current.liked;
+    const nextLikeCount = Math.max(0, current.likeCount + (nextLiked ? 1 : -1));
+
+    setComments((prev) => prev.map((c) =>
+      c.id === commentId ? { ...c, liked: nextLiked, likeCount: nextLikeCount } : c,
+    ));
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/comments/${commentId}/like`, {
+        method: current.liked ? "DELETE" : "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) throw new Error("Comment like failed");
+
+      const data = await res.json() as { likeCount?: number; liked?: boolean };
+      setComments((prev) => prev.map((c) =>
+        c.id === commentId
+          ? {
+              ...c,
+              liked: typeof data.liked === "boolean" ? data.liked : nextLiked,
+              likeCount: typeof data.likeCount === "number" ? data.likeCount : nextLikeCount,
+            }
+          : c,
+      ));
+    } catch {
+      setComments((prev) => prev.map((c) =>
+        c.id === commentId ? current : c,
+      ));
+    }
+  };
+
+  const submitReply = async (parentCommentId: string) => {
+    const text = (replyDrafts[parentCommentId] || "").trim();
+    if (!text || submittingReplyFor) return;
+    if (!isUuid) return;
+
+    const token = localStorage.getItem("fitsphere_token");
+    if (!token) return;
+
+    setSubmittingReplyFor(parentCommentId);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/comments/${parentCommentId}/replies`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ content: text }),
+      });
+
+      if (!res.ok) throw new Error("Reply failed");
+
+      const reply = await res.json() as BackendComment;
+      setComments((prev) => {
+        const bumped = prev.map((c) =>
+          c.id === parentCommentId ? { ...c, replyCount: (c.replyCount || 0) + 1 } : c,
+        );
+        return [...bumped, reply];
+      });
+      setCommentCount((c) => c + 1);
+      setReplyDrafts((prev) => ({ ...prev, [parentCommentId]: "" }));
+      setReplyingTo(null);
+    } catch {
+      // ignore
+    } finally {
+      setSubmittingReplyFor(null);
+    }
+  };
+
+  const renderCommentNode = (c: BackendComment, depth = 0) => {
+    const children = repliesByParent[c.id] || [];
+    const draft = replyDrafts[c.id] || "";
+
+    return (
+      <div key={c.id} className={depth > 0 ? "ml-8" : ""}>
+        <div className="flex gap-2.5">
+          <div className="shrink-0 h-7 w-7 rounded-full bg-gradient-to-br from-orange-500 to-orange-700 flex items-center justify-center text-[11px] font-black text-white">
+            {c.initials}
+          </div>
+          <div className="min-w-0 flex-1 rounded-xl bg-white/5 px-3 py-2">
+            <p className="text-xs font-semibold text-white">{c.author}</p>
+            <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{c.content}</p>
+            <div className="mt-1.5 flex items-center gap-3 text-[11px]">
+              <button
+                onClick={() => void toggleCommentLike(c.id)}
+                className={`font-semibold transition-colors ${c.liked ? "text-orange-300" : "text-zinc-500 hover:text-orange-300"}`}
+              >
+                {c.liked ? "Liked" : "Like"}{c.likeCount > 0 ? ` (${c.likeCount})` : ""}
+              </button>
+              <button
+                onClick={() => setReplyingTo((prev) => (prev === c.id ? null : c.id))}
+                className="font-semibold text-zinc-500 hover:text-blue-300 transition-colors"
+              >
+                Reply
+              </button>
+              {c.replyCount > 0 && (
+                <span className="text-zinc-600">{c.replyCount} repl{c.replyCount > 1 ? "ies" : "y"}</span>
+              )}
+              <span className="ml-auto text-zinc-600">{c.time}</span>
+            </div>
+
+            {replyingTo === c.id && (
+              <div className="mt-2 flex gap-2">
+                <input
+                  value={draft}
+                  onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void submitReply(c.id);
+                    }
+                  }}
+                  placeholder={`Reply to ${c.author}...`}
+                  className="flex-1 min-w-0 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white placeholder-zinc-600 outline-none focus:border-blue-400/50 transition-colors"
+                />
+                <button
+                  onClick={() => void submitReply(c.id)}
+                  disabled={!draft.trim() || submittingReplyFor === c.id}
+                  className="shrink-0 rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-400 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  {submittingReplyFor === c.id ? "..." : "Reply"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {children.length > 0 && (
+          <div className="mt-2 space-y-2">
+            {children.map((child) => renderCommentNode(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -752,7 +981,10 @@ function PostCard({ post, onLike }: { post: Post; onLike: (id: string) => void }
           {post.likes}
         </button>
 
-        <button className="flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors">
+        <button
+          onClick={toggleComments}
+          className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${showComments ? "text-blue-300" : "text-zinc-400 hover:text-white"}`}
+        >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path
               d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z"
@@ -760,7 +992,7 @@ function PostCard({ post, onLike }: { post: Post; onLike: (id: string) => void }
               strokeLinejoin="round"
             />
           </svg>
-          {post.comments}
+          {commentCount}
         </button>
 
         <button className="ml-auto flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-white transition-colors">
@@ -774,6 +1006,37 @@ function PostCard({ post, onLike }: { post: Post; onLike: (id: string) => void }
           Share
         </button>
       </div>
+
+      {showComments && (
+        <div className="mt-4 border-t border-white/8 pt-4 space-y-3">
+          {rootComments.length > 0 && (
+            <div className="space-y-2.5 max-h-48 overflow-y-auto">
+              {rootComments.map((c) => renderCommentNode(c))}
+            </div>
+          )}
+          {commentsLoaded && comments.length === 0 && (
+            <p className="text-xs text-zinc-600 text-center py-1">No comments yet. Be the first!</p>
+          )}
+          {isUuid && (
+            <div className="flex gap-2">
+              <input
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitComment(); } }}
+                placeholder="Write a comment..."
+                className="flex-1 min-w-0 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-orange-500/40 transition-colors"
+              />
+              <button
+                onClick={submitComment}
+                disabled={!commentText.trim() || submittingComment}
+                className="shrink-0 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-400 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                {submittingComment ? "..." : "Post"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </article>
   );
 }
@@ -825,7 +1088,7 @@ export default function DashboardPage() {
     return () => window.removeEventListener("fitsphere:profile-updated", handleProfileUpdated);
   }, []);
 
-  // Load user posts from localStorage + community posts
+  // Load user posts from localStorage + community posts, then hydrate from backend feed
   useEffect(() => {
     const loadPosts = () => {
       try {
@@ -835,6 +1098,46 @@ export default function DashboardPage() {
         setPostsCount(stored.length);
       } catch {
         setPosts([...MOCK_POSTS]);
+      }
+
+      // Hydrate from backend feed
+      const token = localStorage.getItem("fitsphere_token");
+      if (token) {
+        fetch(`${API_BASE_URL}/api/social/feed`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (!data || !Array.isArray(data)) return;
+            type BackendPost = {
+              id: string; authorId: string; author: string; initials: string;
+              profileImage?: string | null; type: string; title: string; content: string;
+              tag?: string | null; badge?: string | null; photosJson?: string | null;
+              prsJson?: string | null; routeJson?: string | null;
+              likes: number; comments: number; liked: boolean; time: string;
+            };
+            const backendPosts: Post[] = (data as BackendPost[]).map((p) => ({
+              id: p.id,
+              author: p.author,
+              initials: p.initials,
+              profileImage: p.profileImage,
+              time: p.time,
+              type: p.type as "activity" | "blog",
+              title: p.title,
+              content: p.content,
+              tag: p.tag ?? undefined,
+              badge: p.badge ?? undefined,
+              likes: p.likes,
+              comments: p.comments,
+              liked: p.liked,
+              photos: p.photosJson ? JSON.parse(p.photosJson) as string[] : undefined,
+              prs: p.prsJson ? JSON.parse(p.prsJson) as Post["prs"] : undefined,
+              route: p.routeJson ? JSON.parse(p.routeJson) as Post["route"] : undefined,
+            }));
+            // Replace feed with backend posts + keep MOCK_POSTS at bottom if no backend posts
+            setPosts(backendPosts.length > 0 ? backendPosts : MOCK_POSTS);
+          })
+          .catch(() => null);
       }
       try {
         const s = JSON.parse(localStorage.getItem("fitsphere_social") || "{}");
@@ -978,20 +1281,28 @@ export default function DashboardPage() {
   }, []);
 
   const handleLike = useCallback((id: string) => {
+    let currentlyLiked = false;
+    // Optimistic update
     setPosts((prev) => {
-      const updated = prev.map((post) =>
-        post.id === id
-          ? { ...post, liked: !post.liked, likes: post.liked ? post.likes - 1 : post.likes + 1 }
-          : post,
-      );
       const post = prev.find((p) => p.id === id);
-      if (post && !post.liked) {
-        window.setTimeout(() => {
-          addNotification({ type: "like", message: `${post.author} liked your post "${post.title}"` });
-        }, 800);
-      }
-      return updated;
+      if (post) currentlyLiked = post.liked;
+      return prev.map((p) =>
+        p.id === id
+          ? { ...p, liked: !p.liked, likes: p.liked ? p.likes - 1 : p.likes + 1 }
+          : p,
+      );
     });
+
+    // Backend sync (only for real UUIDs)
+    const token = localStorage.getItem("fitsphere_token");
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+    if (token && isUuid) {
+      // currentlyLiked reflects state BEFORE toggle → method is opposite
+      fetch(`${API_BASE_URL}/api/posts/${id}/like`, {
+        method: currentlyLiked ? "DELETE" : "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => null);
+    }
   }, []);
 
   const submitPost = () => {

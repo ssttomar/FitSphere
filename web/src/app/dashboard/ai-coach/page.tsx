@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Image from "next/image";
-import { API_BASE_URL } from "@/lib/api";
 
 type Role = "user" | "coach";
 type MsgType = "text" | "food-result";
@@ -43,6 +41,21 @@ function getCoachReply(text: string): string {
   if (lower.includes("run") || lower.includes("5k") || lower.includes("cardio")) return COACH_RESPONSES.running;
   if (lower.includes("overload") || lower.includes("progress")) return COACH_RESPONSES.overload;
   return COACH_RESPONSES.default;
+}
+
+function getFoodReply(prompt: string, data: { calories: number; protein: number; carbs: number; fat: number }): string {
+  const lower = prompt.toLowerCase();
+  const mealSize = data.calories < 400 ? "light" : data.calories < 700 ? "moderate" : "hearty";
+
+  if (lower.includes("cut") || lower.includes("fat loss") || lower.includes("lose weight")) {
+    return `I analyzed your photo and this looks like a ${mealSize} meal. For a cut, keep total daily calories in a deficit and prioritize protein. This meal gives about ${data.protein}g protein, so you may want to add a lean protein source if needed.`;
+  }
+
+  if (lower.includes("bulk") || lower.includes("gain") || lower.includes("muscle")) {
+    return `I analyzed your photo and this looks like a ${mealSize} meal. For muscle gain, make sure you're in a slight calorie surplus and spread protein across the day. This is a solid start with about ${data.protein}g protein.`;
+  }
+
+  return `I analyzed your photo and this looks like a ${mealSize} meal. Based on your prompt, here's the macro estimate and how you can adjust your next meal depending on your goal.`;
 }
 
 function CoachAvatar() {
@@ -128,6 +141,8 @@ export default function AICoachPage() {
   ]);
   const [input, setInput] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
+  const [pendingImagePreview, setPendingImagePreview] = useState<string | null>(null);
   const [userInitials, setUserInitials] = useState("U");
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -152,33 +167,38 @@ export default function AICoachPage() {
     if (!text) return;
     setInput("");
 
-    addMessage({ role: "user", type: "text", text });
+    const hasPendingImage = !!pendingImageFile;
+    const imagePreview = hasPendingImage ? pendingImagePreview ?? undefined : undefined;
+
+    addMessage({ role: "user", type: "text", text, imagePreview });
 
     const loadingId = String(Date.now() + Math.random());
-    setMessages((prev) => [...prev, { id: loadingId, role: "coach", type: "text", text: "", loading: true }]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: loadingId,
+        role: "coach",
+        type: hasPendingImage ? "food-result" : "text",
+        text: "",
+        loading: true,
+      },
+    ]);
 
-    await new Promise((r) => setTimeout(r, 900 + Math.random() * 600));
+    if (!hasPendingImage) {
+      await new Promise((r) => setTimeout(r, 900 + Math.random() * 600));
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === loadingId ? { ...m, loading: false, text: getCoachReply(text) } : m
+        )
+      );
+      return;
+    }
 
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === loadingId ? { ...m, loading: false, text: getCoachReply(text) } : m
-      )
-    );
-  };
-
-  const handleImageUpload = async (file: File) => {
-    if (!file.type.startsWith("image/")) return;
     setUploading(true);
-
-    const preview = URL.createObjectURL(file);
-    addMessage({ role: "user", type: "text", text: "Analyze this meal for calories and macros 📸", imagePreview: preview });
-
-    const loadingId = String(Date.now() + Math.random());
-    setMessages((prev) => [...prev, { id: loadingId, role: "coach", type: "food-result", text: "", loading: true }]);
-
     try {
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", pendingImageFile);
+      formData.append("prompt", text);
       const aiBase = process.env.NEXT_PUBLIC_AI_BASE_URL ?? "http://localhost:8001";
       const res = await fetch(`${aiBase}/analyze-food`, { method: "POST", body: formData });
       const data = res.ok ? await res.json() : { calories: 420, protein: 28, carbs: 45, fat: 14 };
@@ -189,7 +209,7 @@ export default function AICoachPage() {
             ? {
                 ...m,
                 loading: false,
-                text: `Here's the nutritional breakdown for your meal. Based on the analysis, this looks like a ${data.calories < 400 ? "light" : data.calories < 700 ? "moderate" : "hearty"} meal. ${data.protein > 25 ? "Great protein content! 💪" : "Consider adding a protein source."}`,
+                text: getFoodReply(text, data),
                 foodResult: data,
               }
             : m
@@ -205,6 +225,19 @@ export default function AICoachPage() {
       );
     } finally {
       setUploading(false);
+      setPendingImageFile(null);
+      setPendingImagePreview(null);
+    }
+  };
+
+  const handleImageUpload = (file: File) => {
+    if (!file.type.startsWith("image/")) return;
+    const preview = URL.createObjectURL(file);
+    setPendingImageFile(file);
+    setPendingImagePreview(preview);
+
+    if (!input.trim()) {
+      setInput("Can you analyze this meal for calories and macros?");
     }
   };
 
@@ -283,28 +316,49 @@ export default function AICoachPage() {
             )}
           </button>
 
-          <div className="flex-1 flex items-end rounded-2xl border border-white/10 bg-white/5 focus-within:border-orange-500/50 transition-colors px-4 py-3 gap-3">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendText(); } }}
-              placeholder="Ask your coach anything — workouts, nutrition, recovery..."
-              rows={1}
-              className="flex-1 bg-transparent text-sm text-white placeholder-zinc-500 outline-none resize-none max-h-32"
-            />
-            <button
-              onClick={sendText}
-              disabled={!input.trim()}
-              className="w-8 h-8 rounded-xl bg-orange-500 hover:bg-orange-400 flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
-            >
-              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-              </svg>
-            </button>
+          <div className="flex-1 rounded-2xl border border-white/10 bg-white/5 focus-within:border-orange-500/50 transition-colors px-4 py-3">
+            {pendingImagePreview && (
+              <div className="mb-3 inline-flex items-center gap-2 rounded-xl border border-orange-500/30 bg-orange-500/10 px-2 py-1.5">
+                <img src={pendingImagePreview} alt="pending upload" className="w-8 h-8 rounded-lg object-cover" />
+                <span className="text-xs text-orange-300">Photo attached</span>
+                <button
+                  onClick={() => {
+                    setPendingImageFile(null);
+                    setPendingImagePreview(null);
+                  }}
+                  className="text-zinc-300 hover:text-white transition-colors"
+                  title="Remove photo"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-end gap-3">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendText(); } }}
+                placeholder={pendingImagePreview ? "Ask what you want to know about this photo..." : "Ask your coach anything — workouts, nutrition, recovery..."}
+                rows={1}
+                className="flex-1 bg-transparent text-sm text-white placeholder-zinc-500 outline-none resize-none max-h-32"
+              />
+              <button
+                onClick={sendText}
+                disabled={!input.trim() || uploading}
+                className="w-8 h-8 rounded-xl bg-orange-500 hover:bg-orange-400 flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+              >
+                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
         <p className="text-center text-xs text-zinc-600 mt-2 max-w-3xl mx-auto">
-          📸 Upload a food photo for instant calorie & macro analysis · Press Enter to send
+          📸 Upload a food photo, then write your prompt so AI coach can analyze it with your context
         </p>
       </div>
     </div>

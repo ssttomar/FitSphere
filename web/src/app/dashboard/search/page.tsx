@@ -26,11 +26,19 @@ function normalizeUsername(value?: string | null) {
   return (value || "").trim().replace(/^@/, "").toLowerCase();
 }
 
+function compactSearchKey(value?: string | null) {
+  return normalizeUsername(value).replace(/[\s._-]+/g, "");
+}
+
 function matchesQuery(user: UserResult, q: string) {
+  const compactQ = compactSearchKey(q);
+  const compactUser = compactSearchKey(user.username);
+  const compactName = compactSearchKey(user.displayName);
   return (
     user.displayName.toLowerCase().includes(q) ||
     (user.username || "").toLowerCase().includes(q) ||
-    (user.preferredCategory || "").toLowerCase().includes(q)
+    (user.preferredCategory || "").toLowerCase().includes(q) ||
+    (!!compactQ && (compactUser.includes(compactQ) || compactName.includes(compactQ)))
   );
 }
 
@@ -74,7 +82,9 @@ function SearchPageContent() {
   const [followState, setFollowState] = useState<FollowState>({});
   const [selfUser, setSelfUser] = useState<UserResult | null>(null);
   const [followError, setFollowError] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [suggested, setSuggested] = useState<UserResult[]>(DEMO_USERS.slice(0, 4));
   const inputRef = useRef<HTMLInputElement>(null);
 
   const updateFollowState = (updater: (prev: FollowState) => FollowState) => {
@@ -96,6 +106,22 @@ function SearchPageContent() {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setFollowState(stored);
     } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    // Load real suggested users from backend
+    const token = localStorage.getItem("fitsphere_token");
+    if (!token) return;
+    fetch(`${API_BASE_URL}/api/users/suggested`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data) && data.length > 0) {
+          setSuggested(data as UserResult[]);
+        }
+      })
+      .catch(() => null);
   }, []);
 
   useEffect(() => {
@@ -122,7 +148,11 @@ function SearchPageContent() {
     // Best-effort sync: if backend profile misses username but local cache has it,
     // attempt to save it so global search can find this user.
     const token = localStorage.getItem("fitsphere_token");
-    const cachedUsername = (localStorage.getItem("fitsphere_username") || "").trim().toLowerCase();
+    const cachedUsername = (localStorage.getItem("fitsphere_username") || "")
+      .trim()
+      .replace(/^@/, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9._]/g, "");
     if (!token) return;
 
     fetch(`${API_BASE_URL}/api/auth/me`, {
@@ -136,6 +166,7 @@ function SearchPageContent() {
           displayName?: string;
           username?: string;
           profileImageDataUrl?: string | null;
+          age?: number;
         };
         const meId = (typeof meData.userId === "string" && meData.userId) || localStorage.getItem("fitsphere_user_id") || "";
         const meDisplayName = (typeof meData.displayName === "string" && meData.displayName) || localStorage.getItem("fitsphere_display_name") || "";
@@ -165,26 +196,30 @@ function SearchPageContent() {
         })
           .then(async (res) => {
             if (res.ok) return;
-            // Older backend may not expose /complete-account.
-            // Fallback to /setup-username if we have age.
-            if (res.status === 404) {
-              let age: number | null = null;
-              try {
+
+            // Phone-only accounts can fail /complete-account due to missing email.
+            // Fallback to setup-username when age is available locally.
+            let age: number | null = typeof meData.age === "number" && Number.isFinite(meData.age)
+              ? meData.age
+              : null;
+            try {
+              if (age === null) {
                 const profileRaw = localStorage.getItem("fitsphere_profile_data");
                 if (profileRaw) {
                   const parsed = JSON.parse(profileRaw) as { age?: number };
                   if (typeof parsed.age === "number" && Number.isFinite(parsed.age)) age = parsed.age;
                 }
-              } catch {
-                age = null;
               }
-              if (age && age >= 10 && age <= 100) {
-                await fetch(`${API_BASE_URL}/api/auth/setup-username`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                  body: JSON.stringify({ username: cachedUsername, age }),
-                }).catch(() => null);
-              }
+            } catch {
+              // keep current age value
+            }
+
+            if (age && age >= 10 && age <= 100) {
+              await fetch(`${API_BASE_URL}/api/auth/setup-username`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ username: cachedUsername, age }),
+              }).catch(() => null);
             }
           })
           .catch(() => null);
@@ -204,11 +239,13 @@ function SearchPageContent() {
     const timeoutId = window.setTimeout(() => {
       if (!q) {
         setResults([]);
+        setSearchError(null);
         setLoading(false);
         return;
       }
 
       setLoading(true);
+      setSearchError(null);
 
       // Try backend search first, fall back to demo users
       const token = localStorage.getItem("fitsphere_token");
@@ -216,14 +253,19 @@ function SearchPageContent() {
         fetch(`${API_BASE_URL}/api/users/search?q=${encodeURIComponent(q)}`, {
           headers: { Authorization: `Bearer ${token}` },
         })
-          .then((res) => (res.ok ? res.json() : null))
+          .then(async (res) => {
+            if (res.ok) return res.json();
+            const text = (await res.text()).trim();
+            throw new Error(text || `Search failed (${res.status})`);
+          })
           .then((data) => {
             const backendList = data && Array.isArray(data) ? (data as UserResult[]) : [];
             setResults(includeSelfIfMatching(backendList, q, selfUser));
             setLoading(false);
           })
-          .catch(() => {
+          .catch((err) => {
             setResults(includeSelfIfMatching([], q, selfUser));
+            setSearchError(err instanceof Error ? err.message : "Search failed. Try again.");
             setLoading(false);
           });
       } else {
@@ -246,7 +288,7 @@ function SearchPageContent() {
   const handleFollow = async (userId: string) => {
     setFollowError(null);
     const selfId = selfUser?.id || null;
-    const user = [...results, ...DEMO_USERS].find((u) => u.id === userId);
+    const user = [...results, ...suggested].find((u) => u.id === userId);
     const sameUserById = !!selfId && userId === selfId;
     const sameUserByUsername =
       !!user &&
@@ -255,31 +297,33 @@ function SearchPageContent() {
     if (sameUserById || sameUserByUsername) return;
 
     const current = followState[userId] || "none";
-    const isFollowing = current === "following";
     const token = localStorage.getItem("fitsphere_token");
     const isDemoId = !isUuid(userId);
 
+    // Determine next state and HTTP method
+    const isActive = current === "following" || current === "requested";
+    const next: "none" | "requested" | "following" = isActive ? "none" : "requested";
+    const method = isActive ? "DELETE" : "POST";
+
     // Optimistic update
-    const next = isFollowing ? "none" : "following";
     updateFollowState((prev) => ({ ...prev, [userId]: next }));
 
     // Demo/local mode for non-backend IDs.
     if (!token || isDemoId) {
-      if (!isFollowing && user) {
+      if (!isActive && user) {
         window.setTimeout(() => {
-          addNotification({ type: "follow", message: `${user.displayName} started following you back` });
-        }, 1000);
+          addNotification({ type: "follow", message: `Follow request sent to ${user.displayName}` });
+        }, 500);
       }
       return;
     }
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/users/${userId}/follow`, {
-        method: isFollowing ? "DELETE" : "POST",
+        method,
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
-        // Revert on failure
         updateFollowState((prev) => ({ ...prev, [userId]: current }));
         const serverText = (await res.text()).trim();
         if (res.status === 401 || res.status === 403) {
@@ -289,8 +333,11 @@ function SearchPageContent() {
         } else {
           setFollowError(serverText || `Follow request failed (${res.status}).`);
         }
-      } else if (!isFollowing && user) {
-        addNotification({ type: "follow", message: `You are now following ${user.displayName}` });
+      } else if (!isActive && user) {
+        const data = await res.json() as { followState?: string };
+        const serverState = (data.followState || "requested") as "none" | "requested" | "following";
+        updateFollowState((prev) => ({ ...prev, [userId]: serverState }));
+        addNotification({ type: "follow", message: `Follow request sent to ${user.displayName}` });
       }
     } catch {
       updateFollowState((prev) => ({ ...prev, [userId]: current }));
@@ -299,7 +346,7 @@ function SearchPageContent() {
   };
 
   const selfId = selfUser?.id || null;
-  const suggested = DEMO_USERS.filter((u) => u.id !== selfId && (!followState[u.id] || followState[u.id] === "none")).slice(0, 4);
+  const suggestedFiltered = suggested.filter((u) => u.id !== selfId && (!followState[u.id] || followState[u.id] === "none")).slice(0, 6);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
@@ -345,6 +392,9 @@ function SearchPageContent() {
               <p className="text-zinc-400">No athletes found for &quot;{query.trim()}&quot;</p>
             </div>
           )}
+          {searchError && (
+            <p className="mt-3 text-sm text-red-400">{searchError}</p>
+          )}
           <div className="space-y-3">
             {results.map((user) => (
               <UserCard
@@ -366,7 +416,7 @@ function SearchPageContent() {
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-3">Suggested Athletes</p>
           <div className="space-y-3">
-            {suggested.map((user) => (
+            {suggestedFiltered.map((user) => (
               <UserCard
                 key={user.id}
                 user={user}
@@ -428,10 +478,12 @@ function UserCard({
             ? "border border-white/10 bg-white/5 text-zinc-500 cursor-not-allowed"
             : followState === "following"
             ? "border border-white/15 bg-white/5 text-zinc-300 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30"
+            : followState === "requested"
+            ? "border border-orange-500/30 bg-orange-500/10 text-orange-400 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30"
             : "bg-orange-500 text-white hover:bg-orange-400"
         }`}
       >
-        {isSelf ? "You" : followState === "following" ? "Following" : "Follow"}
+        {isSelf ? "You" : followState === "following" ? "Following" : followState === "requested" ? "Requested" : "Follow"}
       </button>
     </div>
   );

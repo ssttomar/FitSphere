@@ -259,6 +259,23 @@ function emptyEditForm(displayName: string): EditProfileForm {
 
 type StoredPost = Post & { createdAt?: number; photos?: string[]; prs?: { exercise: string; value: string; unit: string }[] };
 
+type BackendPost = {
+  id: string;
+  type: string;
+  title: string;
+  content: string;
+  likes: number;
+  comments: number;
+  time: string;
+  tag?: string | null;
+  photosJson?: string | null;
+  prsJson?: string | null;
+};
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 function loadStoredPosts(): StoredPost[] {
   try {
     return JSON.parse(localStorage.getItem("fitsphere_posts") || "[]");
@@ -288,6 +305,43 @@ export default function ProfilePage() {
     window.addEventListener("fitsphere:post-shared", handlePost);
     return () => window.removeEventListener("fitsphere:post-shared", handlePost);
   }, []);
+
+  useEffect(() => {
+    if (!profile?.userId) return;
+    const token = localStorage.getItem("fitsphere_token");
+    if (!token) return;
+
+    fetch(`${API_BASE_URL}/api/users/${profile.userId}/posts`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data || !Array.isArray(data)) return;
+
+        const backendPosts = (data as BackendPost[]).map((p) => ({
+          id: p.id,
+          type: p.type === "blog" ? "blog" : "activity",
+          title: p.title,
+          content: p.content,
+          likes: p.likes,
+          comments: p.comments,
+          time: p.time,
+          tag: p.tag ?? undefined,
+          photos: p.photosJson ? JSON.parse(p.photosJson) as string[] : undefined,
+          prs: p.prsJson
+            ? JSON.parse(p.prsJson) as { exercise: string; value: string; unit: string }[]
+            : undefined,
+        })) as StoredPost[];
+
+        const backendIds = new Set(backendPosts.map((p) => p.id));
+        const localOnly = loadStoredPosts()
+          .filter((p) => !isUuid(p.id) || !backendIds.has(p.id))
+          .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+
+        setMyPosts([...localOnly, ...backendPosts]);
+      })
+      .catch(() => null);
+  }, [profile?.userId]);
 
   useEffect(() => {
     const token = localStorage.getItem("fitsphere_token");

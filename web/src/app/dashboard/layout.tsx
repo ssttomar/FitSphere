@@ -4,7 +4,8 @@ import { ChangeEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Logo } from "@/components/logo";
-import { AppNotification, getNotifications, markAllRead, unreadCount, timeAgo } from "@/lib/notifications";
+import { AppNotification, getNotifications, markAllReadBackend, unreadCount, timeAgo, syncBackendNotifications } from "@/lib/notifications";
+import { API_BASE_URL } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -112,38 +113,82 @@ function ShareProgressModal({ onClose, displayName, profileImage, initials }: {
 
   const canSubmit = draft.title.trim() && draft.content.trim();
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!canSubmit || submitting) return;
     setSubmitting(true);
 
-    const post = {
+    const type = draft.type === "pr" ? "activity" : draft.type;
+    const badge = draft.isPR || draft.type === "pr" ? "PR" : undefined;
+    const filteredPrs = (draft.isPR || draft.type === "pr")
+      ? draft.prs.filter((p) => p.exercise.trim() && p.value.trim())
+      : [];
+
+    const localPost = {
       id: String(Date.now()),
       author: displayName,
       initials,
       profileImage: profileImage || null,
       time: "Just now",
-      type: draft.type === "pr" ? "activity" : draft.type,
+      type,
       title: draft.title.trim(),
       content: draft.content.trim(),
       tag: draft.tag || undefined,
-      badge: draft.isPR || draft.type === "pr" ? "PR" : undefined,
+      badge,
       likes: 0,
       comments: 0,
       liked: false,
       photos: draft.photos,
-      prs: (draft.isPR || draft.type === "pr")
-        ? draft.prs.filter((p) => p.exercise.trim() && p.value.trim())
-        : [],
+      prs: filteredPrs,
     };
 
-    // Persist post to localStorage so profile Activities tab can read it
+    // Persist locally
     try {
       const stored = JSON.parse(localStorage.getItem("fitsphere_posts") || "[]");
-      stored.unshift({ ...post, createdAt: Date.now() });
+      stored.unshift({ ...localPost, createdAt: Date.now() });
       localStorage.setItem("fitsphere_posts", JSON.stringify(stored.slice(0, 200)));
-    } catch { /* ignore storage errors */ }
+    } catch { /* ignore */ }
 
-    window.dispatchEvent(new CustomEvent("fitsphere:post-shared", { detail: post }));
+    // Save to backend
+    const token = localStorage.getItem("fitsphere_token");
+    if (token) {
+      try {
+        const body = {
+          type,
+          title: draft.title.trim(),
+          content: draft.content.trim(),
+          tag: draft.tag || null,
+          badge: badge || null,
+          photosJson: draft.photos.length > 0 ? JSON.stringify(draft.photos) : null,
+          prsJson: filteredPrs.length > 0 ? JSON.stringify(filteredPrs) : null,
+          routeJson: null,
+        };
+        const res = await fetch(`${API_BASE_URL}/api/posts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify(body),
+        });
+        if (res.ok) {
+          const backendPost = await res.json() as {
+            id: string; author: string; initials: string; profileImage?: string | null;
+            type: string; title: string; content: string; tag?: string; badge?: string;
+            likes: number; comments: number; liked: boolean; time: string;
+            photosJson?: string | null; prsJson?: string | null;
+          };
+          // Use backend post id so likes/comments work correctly
+          const mergedPost = {
+            ...localPost,
+            id: backendPost.id,
+            photos: backendPost.photosJson ? JSON.parse(backendPost.photosJson) as string[] : localPost.photos,
+            prs: backendPost.prsJson ? JSON.parse(backendPost.prsJson) as typeof filteredPrs : filteredPrs,
+          };
+          window.dispatchEvent(new CustomEvent("fitsphere:post-shared", { detail: mergedPost }));
+          onClose();
+          return;
+        }
+      } catch { /* fall through to local dispatch */ }
+    }
+
+    window.dispatchEvent(new CustomEvent("fitsphere:post-shared", { detail: localPost }));
     onClose();
   };
 
@@ -403,6 +448,118 @@ function ShareProgressModal({ onClose, displayName, profileImage, initials }: {
   );
 }
 
+// ── Notification Panel ────────────────────────────────────────────────────────
+
+function NotificationPanel({ notifications, onUpdate }: {
+  notifications: AppNotification[];
+  onUpdate: () => void;
+}) {
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const removeNotificationLocally = (notifId: string) => {
+    const stored = JSON.parse(localStorage.getItem("fitsphere_notifications") || "[]") as AppNotification[];
+    const updated = stored.filter((x) => x.id !== notifId);
+    localStorage.setItem("fitsphere_notifications", JSON.stringify(updated));
+  };
+
+  const handleAccept = async (n: AppNotification) => {
+    if (!n.relatedRequestId) return;
+    setActionLoading(n.id);
+    const token = localStorage.getItem("fitsphere_token");
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/users/me/follow-requests/${n.relatedRequestId}/accept`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      removeNotificationLocally(n.id);
+      await syncBackendNotifications();
+      onUpdate();
+    } catch { /* ignore */ } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleReject = async (n: AppNotification) => {
+    if (!n.relatedRequestId) return;
+    setActionLoading(n.id);
+    const token = localStorage.getItem("fitsphere_token");
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/users/me/follow-requests/${n.relatedRequestId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      removeNotificationLocally(n.id);
+      await syncBackendNotifications();
+      onUpdate();
+    } catch { /* ignore */ } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const iconFor = (type: AppNotification["type"]) => {
+    if (type === "like") return "❤️";
+    if (type === "follow_request") return "👤";
+    if (type === "follow" || type === "follow_accepted") return "✅";
+    return "💬";
+  };
+
+  const bgFor = (type: AppNotification["type"]) => {
+    if (type === "like") return "bg-red-500/20 text-red-400";
+    if (type === "follow_request") return "bg-orange-500/20 text-orange-400";
+    if (type === "follow" || type === "follow_accepted") return "bg-emerald-500/20 text-emerald-400";
+    return "bg-blue-500/20 text-blue-400";
+  };
+
+  return (
+    <div className="absolute right-0 top-full mt-2 w-80 rounded-xl border border-white/10 bg-[#12141c] shadow-2xl overflow-hidden z-50">
+      <div className="px-4 py-3 border-b border-white/8 flex items-center justify-between">
+        <p className="text-sm font-bold text-white">Notifications</p>
+        <span className="text-xs text-zinc-500">{notifications.length} total</span>
+      </div>
+      <div className="max-h-[420px] overflow-y-auto">
+        {notifications.length === 0 ? (
+          <div className="px-4 py-8 text-center">
+            <p className="text-sm text-zinc-500">No notifications yet</p>
+            <p className="text-xs text-zinc-600 mt-1">Follow athletes or share posts to get started</p>
+          </div>
+        ) : (
+          notifications.map((n) => (
+            <div key={n.id} className="flex items-start gap-3 px-4 py-3 hover:bg-white/4 transition-colors border-b border-white/5 last:border-0">
+              <div className={`mt-0.5 shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm ${bgFor(n.type)}`}>
+                {iconFor(n.type)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-zinc-200 leading-snug">{n.message}</p>
+                <p className="text-xs text-zinc-500 mt-0.5">{timeAgo(n.time)}</p>
+                {n.type === "follow_request" && n.relatedRequestId && (
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={() => handleAccept(n)}
+                      disabled={actionLoading === n.id}
+                      className="rounded-lg bg-orange-500 px-3 py-1 text-xs font-bold text-white hover:bg-orange-400 disabled:opacity-50 transition-colors"
+                    >
+                      {actionLoading === n.id ? "..." : "Accept"}
+                    </button>
+                    <button
+                      onClick={() => handleReject(n)}
+                      disabled={actionLoading === n.id}
+                      className="rounded-lg border border-white/15 bg-white/5 px-3 py-1 text-xs font-bold text-zinc-300 hover:bg-white/10 disabled:opacity-50 transition-colors"
+                    >
+                      {actionLoading === n.id ? "..." : "Decline"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Layout ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -480,14 +637,87 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Sync username to DB on every dashboard load so other users can find this user via search
+  useEffect(() => {
+    const token = localStorage.getItem("fitsphere_token");
+    const cachedUsername = (localStorage.getItem("fitsphere_username") || "")
+      .trim()
+      .replace(/^@/, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9._]/g, "");
+    if (!token) return;
+
+    fetch(`${API_BASE_URL}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then(async (me) => {
+        if (!me) return;
+        const apiUsername = (typeof me.username === "string" ? me.username : "").trim().toLowerCase();
+
+        // Update localStorage and navbar if API has a username we don't have locally
+        if (apiUsername && !cachedUsername) {
+          localStorage.setItem("fitsphere_username", apiUsername);
+          setUsername(apiUsername);
+          return;
+        }
+
+        // Username is in localStorage but not in DB — push it to DB now
+        if (!apiUsername && cachedUsername) {
+          const completeRes = await fetch(`${API_BASE_URL}/api/auth/complete-account`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ username: cachedUsername }),
+          }).catch(() => null);
+
+          if (completeRes?.ok) {
+            setUsername(cachedUsername);
+            return;
+          }
+
+          // For phone-only accounts, complete-account may fail because email is required.
+          // Fallback to setup-username if age exists locally.
+          const ageFromApi = typeof me.age === "number" && Number.isFinite(me.age) ? me.age : null;
+          const age = ageFromApi ?? (() => {
+            try {
+              const raw = localStorage.getItem("fitsphere_profile_data");
+              if (!raw) return null;
+              const parsed = JSON.parse(raw) as { age?: number };
+              return typeof parsed.age === "number" && Number.isFinite(parsed.age) ? parsed.age : null;
+            } catch {
+              return null;
+            }
+          })();
+
+          if (age && age >= 10 && age <= 100) {
+            await fetch(`${API_BASE_URL}/api/auth/setup-username`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ username: cachedUsername, age }),
+            }).catch(() => null);
+          }
+        }
+      })
+      .catch(() => null);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     const syncNotifs = () => {
       setNotifications(getNotifications());
       setNotifCount(unreadCount());
     };
     syncNotifs();
+    // Sync from backend on mount
+    syncBackendNotifications().then(syncNotifs);
+    // Poll every 30 seconds
+    const pollId = window.setInterval(() => {
+      syncBackendNotifications().then(syncNotifs);
+    }, 30_000);
     window.addEventListener("fitsphere:notification", syncNotifs);
-    return () => window.removeEventListener("fitsphere:notification", syncNotifs);
+    return () => {
+      window.clearInterval(pollId);
+      window.removeEventListener("fitsphere:notification", syncNotifs);
+    };
   }, []);
 
   const logout = () => {
@@ -601,7 +831,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               onClick={() => {
                 setNotifOpen((o) => !o);
                 if (!notifOpen) {
-                  markAllRead();
+                  markAllReadBackend();
                   setNotifCount(0);
                   setNotifications(getNotifications());
                 }
@@ -619,36 +849,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </button>
 
             {notifOpen && (
-              <div className="absolute right-0 top-full mt-2 w-80 rounded-xl border border-white/10 bg-[#12141c] shadow-2xl overflow-hidden z-50">
-                <div className="px-4 py-3 border-b border-white/8 flex items-center justify-between">
-                  <p className="text-sm font-bold text-white">Notifications</p>
-                  <span className="text-xs text-zinc-500">{notifications.length} total</span>
-                </div>
-                <div className="max-h-80 overflow-y-auto">
-                  {notifications.length === 0 ? (
-                    <div className="px-4 py-8 text-center">
-                      <p className="text-sm text-zinc-500">No notifications yet</p>
-                      <p className="text-xs text-zinc-600 mt-1">Like posts or follow athletes to get started</p>
-                    </div>
-                  ) : (
-                    notifications.map((n) => (
-                      <div key={n.id} className="flex items-start gap-3 px-4 py-3 hover:bg-white/4 transition-colors border-b border-white/5 last:border-0">
-                        <div className={`mt-0.5 shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm ${
-                          n.type === "like" ? "bg-red-500/20 text-red-400" :
-                          n.type === "follow" ? "bg-orange-500/20 text-orange-400" :
-                          "bg-blue-500/20 text-blue-400"
-                        }`}>
-                          {n.type === "like" ? "❤️" : n.type === "follow" ? "👤" : "💬"}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-zinc-200 leading-snug">{n.message}</p>
-                          <p className="text-xs text-zinc-500 mt-0.5">{timeAgo(n.time)}</p>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+              <NotificationPanel
+                notifications={notifications}
+                onUpdate={() => {
+                  setNotifications(getNotifications());
+                  setNotifCount(unreadCount());
+                }}
+              />
             )}
           </div>
 

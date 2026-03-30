@@ -113,6 +113,7 @@ public class AuthDtos {
         UUID userId,
         String token,
         String displayName,
+        String username,
         String fitnessCategory,
         boolean isNewUser
     ) {}

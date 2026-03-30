@@ -459,6 +459,7 @@ public class AuthService {
             user.getId(),
             issueToken(user),
             user.getDisplayName(),
+            user.getUsername() != null ? user.getUsername() : "",
             user.getPreferredCategory(),
             isNewUser
         );

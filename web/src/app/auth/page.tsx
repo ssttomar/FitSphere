@@ -18,6 +18,7 @@ type AuthResponse = {
   userId: string;
   token: string;
   displayName: string;
+  username?: string;
   isNewUser?: boolean;
 };
 
@@ -110,10 +111,11 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-function saveAuth(resp: { userId: string; token: string; displayName: string }) {
+function saveAuth(resp: { userId: string; token: string; displayName: string; username?: string }) {
   localStorage.setItem("fitsphere_token", resp.token);
   localStorage.setItem("fitsphere_user_id", resp.userId);
   localStorage.setItem("fitsphere_display_name", resp.displayName);
+  if (resp.username) localStorage.setItem("fitsphere_username", resp.username);
 }
 
 function saveAgeToProfileStorage(age: number) {
@@ -190,12 +192,12 @@ function DevOtpBadge({ otp }: { otp: string }) {
 
 //  Google button 
 
-function GoogleButton({ onClick, loading }: { onClick: () => void; loading: boolean }) {
+function GoogleButton({ onClick, loading, disabled }: { onClick: () => void; loading: boolean; disabled?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={loading}
+      disabled={loading || disabled}
       className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10 hover:border-white/25 transition-all disabled:opacity-50"
     >
       <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24">
@@ -233,6 +235,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [gsiReady, setGsiReady] = useState(false);
   // Google new-user setup
   const [googleName, setGoogleName] = useState("");
   const [googleEmail, setGoogleEmail] = useState("");
@@ -280,6 +283,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
     if (!clientId) return;
     if (window.__gsiLoaded) {
       window.google?.accounts?.id?.initialize({ client_id: clientId, callback: handleGoogleCredential });
+      setGsiReady(true);
       return;
     }
     const script = document.createElement("script");
@@ -292,6 +296,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
         client_id: clientId,
         callback: handleGoogleCredential,
       });
+      setGsiReady(true);
     };
     document.head.appendChild(script);
     return () => { document.head.removeChild(script); };
@@ -508,7 +513,7 @@ function SignupFlow({ onDone, onSwitchToLogin }: {
               <div className="flex-1 h-px bg-white/10" />
             </div>
 
-            <GoogleButton onClick={handleGoogleClick} loading={googleLoading} />
+            <GoogleButton onClick={handleGoogleClick} loading={googleLoading} disabled={!gsiReady} />
           </div>
 
           {error && <p className="mt-4 text-sm text-red-400 text-center">{error}</p>}
@@ -906,6 +911,7 @@ function LoginForm({ onDone, onSwitchToSignup }: {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [gsiReady, setGsiReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [forgotOpen, setForgotOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
@@ -936,6 +942,7 @@ function LoginForm({ onDone, onSwitchToSignup }: {
     if (!clientId) return;
     if (window.__gsiLoaded) {
       window.google?.accounts?.id?.initialize({ client_id: clientId, callback: handleGoogleCredential });
+      setGsiReady(true);
       return;
     }
     const script = document.createElement("script");
@@ -947,6 +954,7 @@ function LoginForm({ onDone, onSwitchToSignup }: {
         client_id: clientId,
         callback: handleGoogleCredential,
       });
+      setGsiReady(true);
     };
     document.head.appendChild(script);
   }, [handleGoogleCredential]);
@@ -995,7 +1003,7 @@ function LoginForm({ onDone, onSwitchToSignup }: {
       </div>
 
       <div className="space-y-4">
-        <GoogleButton onClick={handleGoogleClick} loading={googleLoading} />
+        <GoogleButton onClick={handleGoogleClick} loading={googleLoading} disabled={!gsiReady} />
 
         <div className="relative flex items-center gap-3">
           <div className="flex-1 h-px bg-white/10" />
