@@ -4,6 +4,13 @@ import { useEffect, useRef, useState } from "react";
 
 type Role = "user" | "coach";
 type MsgType = "text" | "food-result";
+type ImageIntent = "food" | "physique" | "general";
+type ImageAnalysisResponse = {
+  reply?: string;
+  intent?: ImageIntent;
+  macros?: { calories: number; protein: number; carbs: number; fat: number } | null;
+  source?: "llm" | "fallback";
+};
 
 type Message = {
   id: string;
@@ -43,6 +50,44 @@ function getCoachReply(text: string): string {
   return COACH_RESPONSES.default;
 }
 
+function detectImageIntent(prompt: string): ImageIntent {
+  const lower = prompt.toLowerCase();
+  const foodKeywords = [
+    "meal",
+    "food",
+    "eat",
+    "eating",
+    "calorie",
+    "calories",
+    "macro",
+    "protein",
+    "carb",
+    "fat",
+    "nutrition",
+    "diet",
+    "plate",
+  ];
+  const physiqueKeywords = [
+    "physique",
+    "body",
+    "shape",
+    "build",
+    "muscle",
+    "lean",
+    "bulk",
+    "cut",
+    "posture",
+    "symmetry",
+    "improve",
+    "look",
+    "aesthetic",
+  ];
+
+  if (foodKeywords.some((k) => lower.includes(k))) return "food";
+  if (physiqueKeywords.some((k) => lower.includes(k))) return "physique";
+  return "general";
+}
+
 function getFoodReply(prompt: string, data: { calories: number; protein: number; carbs: number; fat: number }): string {
   const lower = prompt.toLowerCase();
   const mealSize = data.calories < 400 ? "light" : data.calories < 700 ? "moderate" : "hearty";
@@ -56,6 +101,25 @@ function getFoodReply(prompt: string, data: { calories: number; protein: number;
   }
 
   return `I analyzed your photo and this looks like a ${mealSize} meal. Based on your prompt, here's the macro estimate and how you can adjust your next meal depending on your goal.`;
+}
+
+function getImageCoachReply(prompt: string, intent: ImageIntent): string {
+  if (intent === "physique") {
+    return `Great progress. Based on your physique-focused prompt, here is how to improve next:
+
+1. Train each muscle group at least 2 times per week with progressive overload.
+2. Keep protein at 1.6-2.2g per kg bodyweight daily.
+3. For a leaner look, use a small calorie deficit; for size, use a small surplus.
+4. Prioritize sleep (7-9 hours) and track lifts weekly.
+
+If you share your goal (cut, lean bulk, or recomposition), I can make a 4-week plan from this.`;
+  }
+
+  return `I can help with this image, but I need a bit more context to give accurate advice. Tell me your goal and what you want analyzed, for example:
+
+1. "Review my physique and suggest improvements"
+2. "Estimate calories and macros in this meal"
+3. "Check my pose and suggest form fixes"`;
 }
 
 function CoachAvatar() {
@@ -168,6 +232,7 @@ export default function AICoachPage() {
     setInput("");
 
     const hasPendingImage = !!pendingImageFile;
+    const imageIntent = hasPendingImage ? detectImageIntent(text) : null;
     const imagePreview = hasPendingImage ? pendingImagePreview ?? undefined : undefined;
 
     addMessage({ role: "user", type: "text", text, imagePreview });
@@ -200,8 +265,15 @@ export default function AICoachPage() {
       formData.append("file", pendingImageFile);
       formData.append("prompt", text);
       const aiBase = process.env.NEXT_PUBLIC_AI_BASE_URL ?? "http://localhost:8001";
-      const res = await fetch(`${aiBase}/analyze-food`, { method: "POST", body: formData });
-      const data = res.ok ? await res.json() : { calories: 420, protein: 28, carbs: 45, fat: 14 };
+      const res = await fetch(`${aiBase}/analyze-image`, { method: "POST", body: formData });
+      const data: ImageAnalysisResponse = res.ok ? await res.json() : {};
+
+      const fallbackIntent = imageIntent ?? "general";
+      const macros = data.macros ?? null;
+      const reply =
+        typeof data.reply === "string" && data.reply.trim()
+          ? data.reply.trim()
+          : getImageCoachReply(text, fallbackIntent);
 
       setMessages((prev) =>
         prev.map((m) =>
@@ -209,8 +281,9 @@ export default function AICoachPage() {
             ? {
                 ...m,
                 loading: false,
-                text: getFoodReply(text, data),
-                foodResult: data,
+                type: macros ? "food-result" : "text",
+                text: reply || (macros ? getFoodReply(text, macros) : getImageCoachReply(text, fallbackIntent)),
+                foodResult: macros ?? undefined,
               }
             : m
         )
@@ -237,7 +310,7 @@ export default function AICoachPage() {
     setPendingImagePreview(preview);
 
     if (!input.trim()) {
-      setInput("Can you analyze this meal for calories and macros?");
+      setInput("Can you analyze this image and help me improve?");
     }
   };
 
@@ -302,7 +375,7 @@ export default function AICoachPage() {
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
             className="w-10 h-10 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-colors shrink-0 disabled:opacity-50"
-            title="Upload food photo"
+            title="Upload photo"
           >
             {uploading ? (
               <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -358,7 +431,7 @@ export default function AICoachPage() {
           </div>
         </div>
         <p className="text-center text-xs text-zinc-600 mt-2 max-w-3xl mx-auto">
-          📸 Upload a food photo, then write your prompt so AI coach can analyze it with your context
+          📸 Upload a photo, then describe what you want analyzed for accurate coaching
         </p>
       </div>
     </div>

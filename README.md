@@ -37,6 +37,27 @@ All endpoints except `/api/auth/register` and `/api/auth/login` require `Authori
 
 - `POST /analyze-food` with `multipart/form-data` image upload
 - Returns estimated calories/protein/carbs/fat (placeholder heuristic)
+- `POST /analyze-image` with `multipart/form-data` (`file`, `prompt`)
+- Returns prompt-aware AI coaching reply and optional macros when food intent is detected
+
+### LLM Configuration (ai-service)
+
+Set these variables in `.env` for real multimodal output:
+
+- `OPENAI_API_KEY=<your key>`
+- `OPENAI_MODEL=gpt-4.1-mini` (or another vision-capable model)
+- `OPENAI_BASE_URL=https://api.openai.com/v1` (or your compatible gateway)
+- `OPENAI_API_STYLE=auto` (`auto`, `responses`, or `chat`)
+
+### Using Qwen2.5-VL 7B Instruct Locally (vLLM)
+
+1. Run a local OpenAI-compatible server (example with vLLM) and load `Qwen/Qwen2.5-VL-7B-Instruct`.
+2. Set `.env` values:
+	- `OPENAI_API_KEY=local-dev-key`
+	- `OPENAI_BASE_URL=http://host.docker.internal:8002/v1`
+	- `OPENAI_MODEL=Qwen/Qwen2.5-VL-7B-Instruct`
+	- `OPENAI_API_STYLE=chat`
+3. Restart ai-service: `docker compose up -d --build ai-service`
 
 ## Run Frontend Only
 
