@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
 
 type Role = "user" | "coach";
 type MsgType = "text" | "food-result";
@@ -17,7 +18,7 @@ type Message = {
   role: Role;
   type: MsgType;
   text: string;
-  imagePreview?: string;
+  imagePreviews?: string[];
   foodResult?: { calories: number; protein: number; carbs: number; fat: number };
   loading?: boolean;
 };
@@ -146,9 +147,13 @@ function MessageBubble({ msg, userInitials }: { msg: Message; userInitials: stri
       )}
 
       <div className={`max-w-[75%] space-y-2 ${isCoach ? "" : "items-end flex flex-col"}`}>
-        {msg.imagePreview && (
-          <div className="rounded-xl overflow-hidden border border-white/10 max-w-xs">
-            <img src={msg.imagePreview} alt="uploaded food" className="w-full object-cover max-h-48" />
+        {msg.imagePreviews && msg.imagePreviews.length > 0 && (
+          <div className={`flex gap-2 flex-wrap ${msg.imagePreviews.length === 1 ? "max-w-xs" : "max-w-sm"}`}>
+            {msg.imagePreviews.map((src, i) => (
+              <div key={i} className="rounded-xl overflow-hidden border border-white/10" style={{ width: msg.imagePreviews!.length === 1 ? "100%" : "calc(50% - 4px)" }}>
+                <img src={src} alt={`upload ${i + 1}`} className="w-full object-cover max-h-40" />
+              </div>
+            ))}
           </div>
         )}
 
@@ -161,12 +166,30 @@ function MessageBubble({ msg, userInitials }: { msg: Message; userInitials: stri
             </div>
           </div>
         ) : (
-          <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-line ${
+          <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
             isCoach
               ? "bg-[#1a1d28] border border-white/8 text-zinc-200"
               : "bg-orange-500 text-white"
           }`}>
-            {msg.text}
+            {isCoach ? (
+              <ReactMarkdown
+                components={{
+                  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                  ul: ({ children }) => <ul className="list-disc list-inside space-y-1 mb-2">{children}</ul>,
+                  ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 mb-2">{children}</ol>,
+                  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                  strong: ({ children }) => <strong className="font-bold text-white">{children}</strong>,
+                  h1: ({ children }) => <h1 className="font-bold text-base mb-1">{children}</h1>,
+                  h2: ({ children }) => <h2 className="font-bold text-sm mb-1">{children}</h2>,
+                  h3: ({ children }) => <h3 className="font-semibold mb-1">{children}</h3>,
+                  code: ({ children }) => <code className="bg-white/10 rounded px-1 text-xs">{children}</code>,
+                }}
+              >
+                {msg.text}
+              </ReactMarkdown>
+            ) : (
+              msg.text
+            )}
           </div>
         )}
 
@@ -194,6 +217,8 @@ function MessageBubble({ msg, userInitials }: { msg: Message; userInitials: stri
   );
 }
 
+type ChatHistoryEntry = { role: "user" | "assistant"; content: string };
+
 export default function AICoachPage() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -203,10 +228,11 @@ export default function AICoachPage() {
       text: "Hey! I'm your personal AI Fitness Coach 💪\n\nI can help you with:\n• Personalized training plans\n• Nutrition advice & meal planning\n• Food calorie analysis (upload a photo!)\n• Recovery & sleep optimization\n• Exercise technique tips\n\nWhat do you want to work on today?",
     },
   ]);
+  const [chatHistory, setChatHistory] = useState<ChatHistoryEntry[]>([]);
   const [input, setInput] = useState("");
   const [uploading, setUploading] = useState(false);
-  const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
-  const [pendingImagePreview, setPendingImagePreview] = useState<string | null>(null);
+  const [pendingImageFiles, setPendingImageFiles] = useState<File[]>([]);
+  const [pendingImagePreviews, setPendingImagePreviews] = useState<string[]>([]);
   const [userInitials, setUserInitials] = useState("U");
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -231,11 +257,10 @@ export default function AICoachPage() {
     if (!text) return;
     setInput("");
 
-    const hasPendingImage = !!pendingImageFile;
+    const hasPendingImage = pendingImageFiles.length > 0;
     const imageIntent = hasPendingImage ? detectImageIntent(text) : null;
-    const imagePreview = hasPendingImage ? pendingImagePreview ?? undefined : undefined;
 
-    addMessage({ role: "user", type: "text", text, imagePreview });
+    addMessage({ role: "user", type: "text", text, imagePreviews: hasPendingImage ? [...pendingImagePreviews] : undefined });
 
     const loadingId = String(Date.now() + Math.random());
     setMessages((prev) => [
@@ -250,19 +275,36 @@ export default function AICoachPage() {
     ]);
 
     if (!hasPendingImage) {
-      await new Promise((r) => setTimeout(r, 900 + Math.random() * 600));
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === loadingId ? { ...m, loading: false, text: getCoachReply(text) } : m
-        )
-      );
+      const updatedHistory: ChatHistoryEntry[] = [...chatHistory, { role: "user", content: text }];
+      setChatHistory(updatedHistory);
+      try {
+        const aiBase = process.env.NEXT_PUBLIC_AI_BASE_URL ?? "http://localhost:8001";
+        const res = await fetch(`${aiBase}/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: updatedHistory }),
+        });
+        const data = res.ok ? await res.json() : {};
+        const reply: string = typeof data.reply === "string" && data.reply.trim()
+          ? data.reply.trim()
+          : getCoachReply(text);
+        setChatHistory((h) => [...h, { role: "assistant", content: reply }]);
+        setMessages((prev) =>
+          prev.map((m) => m.id === loadingId ? { ...m, loading: false, text: reply } : m)
+        );
+      } catch {
+        const fallback = getCoachReply(text);
+        setMessages((prev) =>
+          prev.map((m) => m.id === loadingId ? { ...m, loading: false, text: fallback } : m)
+        );
+      }
       return;
     }
 
     setUploading(true);
     try {
       const formData = new FormData();
-      formData.append("file", pendingImageFile);
+      pendingImageFiles.forEach((f) => formData.append("files", f));
       formData.append("prompt", text);
       const aiBase = process.env.NEXT_PUBLIC_AI_BASE_URL ?? "http://localhost:8001";
       const res = await fetch(`${aiBase}/analyze-image`, { method: "POST", body: formData });
@@ -274,6 +316,13 @@ export default function AICoachPage() {
         typeof data.reply === "string" && data.reply.trim()
           ? data.reply.trim()
           : getImageCoachReply(text, fallbackIntent);
+      const finalReply = reply || (macros ? getFoodReply(text, macros) : getImageCoachReply(text, fallbackIntent));
+
+      setChatHistory((h) => [
+        ...h,
+        { role: "user", content: text },
+        { role: "assistant", content: finalReply },
+      ]);
 
       setMessages((prev) =>
         prev.map((m) =>
@@ -282,7 +331,7 @@ export default function AICoachPage() {
                 ...m,
                 loading: false,
                 type: macros ? "food-result" : "text",
-                text: reply || (macros ? getFoodReply(text, macros) : getImageCoachReply(text, fallbackIntent)),
+                text: finalReply,
                 foodResult: macros ?? undefined,
               }
             : m
@@ -298,20 +347,25 @@ export default function AICoachPage() {
       );
     } finally {
       setUploading(false);
-      setPendingImageFile(null);
-      setPendingImagePreview(null);
+      setPendingImageFiles([]);
+      setPendingImagePreviews([]);
     }
   };
 
-  const handleImageUpload = (file: File) => {
-    if (!file.type.startsWith("image/")) return;
-    const preview = URL.createObjectURL(file);
-    setPendingImageFile(file);
-    setPendingImagePreview(preview);
-
+  const handleImageUpload = (fileList: FileList) => {
+    const valid = Array.from(fileList).filter((f) => f.type.startsWith("image/"));
+    if (!valid.length) return;
+    const previews = valid.map((f) => URL.createObjectURL(f));
+    setPendingImageFiles((prev) => [...prev, ...valid]);
+    setPendingImagePreviews((prev) => [...prev, ...previews]);
     if (!input.trim()) {
       setInput("Can you analyze this image and help me improve?");
     }
+  };
+
+  const removeImage = (index: number) => {
+    setPendingImageFiles((prev) => prev.filter((_, i) => i !== index));
+    setPendingImagePreviews((prev) => prev.filter((_, i) => i !== index));
   };
 
   return (
@@ -368,8 +422,9 @@ export default function AICoachPage() {
             ref={fileRef}
             type="file"
             accept="image/*"
+            multiple
             className="hidden"
-            onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0])}
+            onChange={(e) => e.target.files?.length && handleImageUpload(e.target.files)}
           />
           <button
             onClick={() => fileRef.current?.click()}
@@ -390,22 +445,23 @@ export default function AICoachPage() {
           </button>
 
           <div className="flex-1 rounded-2xl border border-white/10 bg-white/5 focus-within:border-orange-500/50 transition-colors px-4 py-3">
-            {pendingImagePreview && (
-              <div className="mb-3 inline-flex items-center gap-2 rounded-xl border border-orange-500/30 bg-orange-500/10 px-2 py-1.5">
-                <img src={pendingImagePreview} alt="pending upload" className="w-8 h-8 rounded-lg object-cover" />
-                <span className="text-xs text-orange-300">Photo attached</span>
-                <button
-                  onClick={() => {
-                    setPendingImageFile(null);
-                    setPendingImagePreview(null);
-                  }}
-                  className="text-zinc-300 hover:text-white transition-colors"
-                  title="Remove photo"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+            {pendingImagePreviews.length > 0 && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                {pendingImagePreviews.map((src, i) => (
+                  <div key={i} className="inline-flex items-center gap-1.5 rounded-xl border border-orange-500/30 bg-orange-500/10 px-2 py-1.5">
+                    <img src={src} alt={`pending ${i + 1}`} className="w-8 h-8 rounded-lg object-cover" />
+                    <span className="text-xs text-orange-300">Photo {pendingImagePreviews.length > 1 ? i + 1 : ""}</span>
+                    <button
+                      onClick={() => removeImage(i)}
+                      className="text-zinc-300 hover:text-white transition-colors"
+                      title="Remove photo"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -414,7 +470,7 @@ export default function AICoachPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendText(); } }}
-                placeholder={pendingImagePreview ? "Ask what you want to know about this photo..." : "Ask your coach anything — workouts, nutrition, recovery..."}
+                placeholder={pendingImagePreviews.length > 0 ? "Ask what you want to know about these photos..." : "Ask your coach anything — workouts, nutrition, recovery..."}
                 rows={1}
                 className="flex-1 bg-transparent text-sm text-white placeholder-zinc-500 outline-none resize-none max-h-32"
               />

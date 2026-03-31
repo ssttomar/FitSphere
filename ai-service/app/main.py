@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 import os
+import re
 from typing import Any, Dict, List
 
 import numpy as np
@@ -13,6 +14,7 @@ from PIL import Image
 from openai import OpenAI
 
 app = FastAPI(title="FitSphere AI Service", version="0.1.0")
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("fitsphere.ai")
 
 app.add_middleware(
@@ -28,6 +30,15 @@ class ProgressSnapshot(BaseModel):
     weeklyRunKm: int = 0
     weeklyCaloriesBurned: int = 0
     fatigueLevel: int = 4
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
 
 
 class WeeklyPlanRequest(BaseModel):
@@ -67,28 +78,49 @@ def _get_llm_client() -> OpenAI | None:
         return None
 
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
+    if base_url.endswith("/chat/completions"):
+        base_url = base_url[: -len("/chat/completions")]
     return OpenAI(api_key=api_key, base_url=base_url)
 
 
 def _extract_json_object(text: str) -> Dict[str, Any]:
     payload = text.strip()
+    # Strip markdown code fences
+    payload = re.sub(r"^```(?:json)?\s*", "", payload).rstrip("`").strip()
     if not payload:
         return {}
 
+    # 1. Direct parse
     try:
         parsed = json.loads(payload)
         return parsed if isinstance(parsed, dict) else {}
     except json.JSONDecodeError:
         pass
 
+    # 2. Extract outermost { ... }
     start = payload.find("{")
     end = payload.rfind("}")
     if start >= 0 and end > start:
+        chunk = payload[start: end + 1]
         try:
-            parsed = json.loads(payload[start : end + 1])
+            parsed = json.loads(chunk)
             return parsed if isinstance(parsed, dict) else {}
         except json.JSONDecodeError:
-            return {}
+            pass
+        # 3. Multiline strings break json.loads — normalise literal newlines inside strings
+        chunk_fixed = re.sub(r'(?<!\\)\n', r'\\n', chunk)
+        try:
+            parsed = json.loads(chunk_fixed)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            pass
+
+    # 4. Regex fallback: pull "reply" value directly
+    m = re.search(r'"reply"\s*:\s*"((?:[^"\\]|\\.|[\r\n])*?)"(?:\s*,\s*"(?:intent|macros)")', payload, re.DOTALL)
+    if m:
+        reply_val = m.group(1).replace("\\n", "\n").replace('\\"', '"')
+        return {"reply": reply_val, "intent": "general", "macros": None}
+
     return {}
 
 
@@ -168,24 +200,47 @@ def _fallback_image_coach(prompt: str, image_bytes: bytes) -> AnalyzeImageRespon
     )
 
 
-def _analyze_with_llm(prompt: str, image_bytes: bytes) -> AnalyzeImageResponse | None:
+def _resize_image(image_bytes: bytes, max_px: int = 1024, quality: int = 82) -> bytes:
+    try:
+        img = Image.open(BytesIO(image_bytes)).convert("RGB")
+        w, h = img.size
+        if max(w, h) > max_px:
+            scale = max_px / max(w, h)
+            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+        out = BytesIO()
+        img.save(out, format="JPEG", quality=quality, optimize=True)
+        return out.getvalue()
+    except Exception:
+        return image_bytes
+
+
+def _analyze_with_llm(prompt: str, images_bytes: List[bytes]) -> AnalyzeImageResponse | None:
     client = _get_llm_client()
     if not client:
         return None
 
     model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"
     api_style = os.getenv("OPENAI_API_STYLE", "auto").strip().lower()
-    image_b64 = base64.b64encode(image_bytes).decode("ascii")
+    images_bytes = [_resize_image(img) for img in images_bytes]
 
     system_prompt = (
-        "You are FitSphere AI Coach. Analyze the user image and the user prompt. "
+        "You are FitSphere AI Coach. Analyze the user image(s) and the user prompt. "
         "Return ONLY valid JSON with this exact shape: "
         "{\"reply\": string, \"intent\": \"food\"|\"physique\"|\"general\", "
         "\"macros\": {\"calories\": number, \"protein\": number, \"carbs\": number, \"fat\": number} | null}. "
         "Rules: Only include macros when the image/prompt is food-related. "
+        "If multiple food images are provided, sum the macros across all items. "
         "For physique/general, set macros to null and provide practical coaching in reply. "
         "Keep reply concise and actionable."
     )
+
+    image_parts = [
+        {
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{base64.b64encode(img).decode('ascii')}"},
+        }
+        for img in images_bytes
+    ]
 
     raw_text = ""
 
@@ -202,12 +257,10 @@ def _analyze_with_llm(prompt: str, image_bytes: bytes) -> AnalyzeImageResponse |
                     },
                     {
                         "role": "user",
-                        "content": [
-                            {"type": "input_text", "text": f"User prompt: {prompt}"},
-                            {
-                                "type": "input_image",
-                                "image_url": f"data:image/jpeg;base64,{image_b64}",
-                            },
+                        "content": [{"type": "input_text", "text": f"User prompt: {prompt}"}]
+                        + [
+                            {"type": "input_image", "image_url": p["image_url"]["url"]}
+                            for p in image_parts
                         ],
                     },
                 ],
@@ -223,19 +276,10 @@ def _analyze_with_llm(prompt: str, image_bytes: bytes) -> AnalyzeImageResponse |
             temperature=0.2,
             max_tokens=500,
             messages=[
-                {
-                    "role": "system",
-                    "content": system_prompt,
-                },
+                {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": [
-                        {"type": "text", "text": f"User prompt: {prompt}"},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"},
-                        },
-                    ],
+                    "content": [{"type": "text", "text": f"User prompt: {prompt}"}] + image_parts,
                 },
             ],
         )
@@ -243,28 +287,72 @@ def _analyze_with_llm(prompt: str, image_bytes: bytes) -> AnalyzeImageResponse |
         message_content = choice.message.content if choice and choice.message else ""
         raw_text = _extract_chat_text(message_content)
 
-    parsed = _extract_json_object(raw_text)
-    if not parsed:
+    if not raw_text.strip():
         return None
 
-    reply = str(parsed.get("reply", "")).strip()
-    intent = str(parsed.get("intent", "general")).strip().lower()
-    if intent not in {"food", "physique", "general"}:
-        intent = "general"
-
-    macros = _normalize_macros(parsed.get("macros"))
-    if intent != "food":
+    parsed = _extract_json_object(raw_text)
+    if parsed:
+        reply = str(parsed.get("reply", "")).strip()
+        intent = str(parsed.get("intent", "general")).strip().lower()
+        if intent not in {"food", "physique", "general"}:
+            intent = "general"
+        macros = _normalize_macros(parsed.get("macros"))
+        if intent != "food":
+            macros = None
+        if not reply:
+            reply = raw_text.strip()
+    else:
+        # Model returned plain text instead of JSON — use it directly
+        reply = raw_text.strip()
+        intent = "food" if _is_food_prompt(prompt) else "physique" if any(
+            k in prompt.lower() for k in ("physique", "body", "muscle", "build", "shape", "improve", "analyze")
+        ) else "general"
         macros = None
 
-    if not reply:
-        return None
-
+    logger.info("LLM image reply (intent=%s, json=%s): %s", intent, bool(parsed), reply[:80])
     return AnalyzeImageResponse(reply=reply, intent=intent, macros=macros, source="llm")
 
 
 @app.get("/health")
 def health() -> Dict[str, str]:
     return {"status": "ok"}
+
+
+_CHAT_SYSTEM_PROMPT = (
+    "You are FitSphere AI Coach, an expert personal fitness and nutrition coach. "
+    "Give concise, actionable advice grounded in sports science. "
+    "Be friendly, motivating, and direct. "
+    "Focus only on fitness, nutrition, recovery, and wellness topics. "
+    "If asked about something unrelated, politely redirect to fitness."
+)
+
+
+@app.post("/chat")
+def chat(request: ChatRequest) -> Dict[str, str]:
+    client = _get_llm_client()
+    if not client:
+        return {"reply": "I could not reach the AI right now. Please try again in a moment."}
+
+    model = os.getenv("OPENAI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+    memory_turns = int(os.getenv("AI_MEMORY_TURNS", "6"))
+
+    trimmed = request.messages[-(memory_turns * 2):]
+    msgs = [{"role": "system", "content": _CHAT_SYSTEM_PROMPT}] + [
+        {"role": m.role, "content": m.content} for m in trimmed
+    ]
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=msgs,
+            max_tokens=600,
+            temperature=0.7,
+        )
+        reply = response.choices[0].message.content if response.choices else ""
+        return {"reply": reply or "I didn't get a response. Please try again."}
+    except Exception:
+        logger.exception("LLM chat failed")
+        return {"reply": "I'm having trouble connecting right now. Please try again shortly."}
 
 
 @app.post("/analyze-food")
@@ -274,10 +362,11 @@ async def analyze_food(file: UploadFile = File(...)) -> Dict[str, float]:
 
 
 @app.post("/analyze-image", response_model=AnalyzeImageResponse)
-async def analyze_image(prompt: str = Form(...), file: UploadFile = File(...)) -> AnalyzeImageResponse:
-    content = await file.read()
+async def analyze_image(prompt: str = Form(...), files: List[UploadFile] = File(...)) -> AnalyzeImageResponse:
+    images: List[bytes] = [await f.read() for f in files]
+    images = [img for img in images if img]
 
-    if not content:
+    if not images:
         return AnalyzeImageResponse(
             reply="The uploaded file was empty. Please upload a valid image.",
             intent="general",
@@ -285,13 +374,13 @@ async def analyze_image(prompt: str = Form(...), file: UploadFile = File(...)) -
         )
 
     try:
-        llm_result = _analyze_with_llm(prompt=prompt, image_bytes=content)
+        llm_result = _analyze_with_llm(prompt=prompt, images_bytes=images)
         if llm_result:
             return llm_result
-    except Exception:
-        logger.exception("LLM image analysis failed")
+    except Exception as exc:
+        logger.exception("LLM image analysis failed: %s", exc)
 
-    return _fallback_image_coach(prompt=prompt, image_bytes=content)
+    return _fallback_image_coach(prompt=prompt, image_bytes=images[0])
 
 
 @app.post("/recommend-weekly-plan")
